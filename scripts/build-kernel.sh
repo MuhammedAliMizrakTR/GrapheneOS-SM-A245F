@@ -237,14 +237,20 @@ done
 log "dtb source: ${DTB_SRC}"
 cat "${DTB_SRC}" > "${BOOTDIR}/dtb"
 
-# Boot image header v2, offsets taken from the published a24 device tree.
-MKBOOTIMG="${KERNEL_SRC}/tools/mkbootimg/mkbootimg.py"
-[[ -f "${MKBOOTIMG}" ]] || MKBOOTIMG="$(command -v mkbootimg || true)"
-[[ -n "${MKBOOTIMG}" ]] || die "mkbootimg not found"
+# Boot image header v2. mkbootimg is vendored under scripts/third_party:
+# the kernel tree in this repository ships no tools/mkbootimg, and neither
+# apt nor PyPI provides one. Writing the header out of hand was tried first
+# and got the v1/v2 block offsets wrong (the 1024-byte extra_cmdline array
+# pushes them to the end of the v0 header), so the upstream implementation is
+# used instead.
+MKBOOTIMG="${ROOT}/scripts/third_party/mkbootimg/mkbootimg.py"
+[[ -f "${MKBOOTIMG}" ]] || die "vendored mkbootimg missing at ${MKBOOTIMG}"
 
 RAMDISK="${BOOTDIR}/ramdisk.gz"
 [[ -f "${RAMDISK}" ]] || { : > "${BOOTDIR}/empty"; gzip -c "${BOOTDIR}/empty" > "${RAMDISK}"; }
 
+# Offsets are the published a24 values: base 0x3fff8000, kernel +0x8000,
+# ramdisk +0x26f08000, tags +0x07c88000, dtb +0x01f00000.
 python3 "${MKBOOTIMG}" \
     --kernel "${BOOTDIR}/kernel" \
     --ramdisk "${RAMDISK}" \
@@ -254,6 +260,7 @@ python3 "${MKBOOTIMG}" \
     --kernel_offset 0x00008000 \
     --ramdisk_offset 0x26f08000 \
     --tags_offset 0x07c88000 \
+    --dtb_offset 0x01f00000 \
     --pagesize 4096 \
     --cmdline "bootopt=64S3,32N2,64N2 loop.max_part=7" \
     --output "${BOOTDIR}/boot.img"
