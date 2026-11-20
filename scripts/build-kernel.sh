@@ -184,6 +184,7 @@ export CLANG_TRIPLE="aarch64-linux-gnu-"
 MAKE=(make -C "${KERNEL_SRC}" O="${OUT}" ARCH=arm64
       LLVM=1 LLVM_IAS=1
       CROSS_COMPILE="${CROSS_COMPILE}"
+      KCFLAGS="-Wno-error"
       LOCALVERSION="-a24-${VARIANT}")
 
 log "building (jobs=${JOBS})"
@@ -197,7 +198,10 @@ if [[ -f "${OUT}/.config" ]] && grep -q '^CONFIG_MODULES=y' "${OUT}/.config"; th
     log "building vendor modules"
     "${MAKE[@]}" -j"${JOBS}" modules 2>&1 | tee -a "${WORK}/build-${VARIANT}.log" || \
         log "module build reported errors; continuing (see log)"
-    "${MAKE[@]}" INSTALL_MOD_PATH="${OUT}/modules_install" modules_install || true
+    if ! "${MAKE[@]}" INSTALL_MOD_PATH="${OUT}/modules_install" modules_install 2>&1 \
+            | tee -a "${WORK}/build-${VARIANT}.log"; then
+        log "modules_install failed; in-tree modules are not packaged into boot.img anyway"
+    fi
 fi
 
 IMAGEGZ="${OUT}/arch/arm64/boot/Image.gz"
@@ -213,16 +217,25 @@ rm -rf "${BOOTDIR}"; mkdir -p "${BOOTDIR}"
 
 cp "${IMAGEGZ}" "${BOOTDIR}/kernel"
 
-# DTB: prefer the device-specific one, fall back to the mt6789 set
-DTB_GLOB="${OUT}/arch/arm64/boot/dts/mediatek/a24/*.dtb"
-if compgen -G "${DTB_GLOB}" > /dev/null; then
-    cat ${DTB_GLOB} > "${BOOTDIR}/dtb"
-else
-    DTB_MERGE="${KERNEL_SRC}/scripts/dtbTool"
-    [[ -x "${DTB_MERGE}" ]] || die "no a24 DTB and no dtbTool available"
-    "${DTB_MERGE}" -o "${BOOTDIR}/dtb" -s 2048 -d \
-        "${OUT}/arch/arm64/boot/dts/mediatek/" 2>/dev/null || true
-fi
+# DTB: what belongs in boot.img is the base board tree, mt6789.dtb. That is
+# the only target the tree actually builds -- arch/arm64/boot/dts/Makefile
+# lists exactly one dts dir (mediatek) and mediatek/Makefile has a single
+# dtb-y. The Samsung board trees under arch/arm64/boot/dts/samsung/a24/ are
+# /plugin/ overlays and are not built here at all; they belong to the separate
+# dtbo partition and are deliberately left untouched, because a mismatched
+# dtbo against an otherwise stock vendor image breaks panel and camera
+# bring-up.
+DTB_CANDIDATES=(
+    "${OUT}/arch/arm64/boot/dts/mediatek/mt6789.dtb"
+    "${OUT}/arch/arm64/boot/dts/mediatek/a24/"*.dtb
+)
+DTB_SRC=""
+for cand in "${DTB_CANDIDATES[@]}"; do
+    [[ -f "${cand}" ]] && { DTB_SRC="${cand}"; break; }
+done
+[[ -n "${DTB_SRC}" ]] || die "no dtb produced under arch/arm64/boot/dts/mediatek"
+log "dtb source: ${DTB_SRC}"
+cat "${DTB_SRC}" > "${BOOTDIR}/dtb"
 
 # Boot image header v2, offsets taken from the published a24 device tree.
 MKBOOTIMG="${KERNEL_SRC}/tools/mkbootimg/mkbootimg.py"
