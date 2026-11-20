@@ -194,6 +194,7 @@ jobs:
             done
             case "$base" in
               *.tar.gz)            cp "$f" "release/$base"; count=$((count+1)) ;;
+              vbmeta.img)          [ -n "$variant" ] && cp "$f" "release/vbmeta-${variant}.img" ;;
               boot.img)            [ -n "$variant" ] && cp "$f" "release/boot-${variant}.img" ;;
               config-*)            [ -n "$variant" ] && cp "$f" "release/config-${variant}" ;;
               build-info.env)      [ -n "$variant" ] && cp "$f" "release/build-info-${variant}.env" ;;
@@ -202,6 +203,11 @@ jobs:
               *)                   [ -n "$variant" ] && cp "$f" "release/${variant}-${base}" ;;
             esac
           done
+
+          # Tester-facing helpers: the device check script and the flashing
+          # guide belong next to the images, not buried in the repo.
+          cp scripts/check_device.py release/check_device.py 2>/dev/null || true
+          cp docs/FLASHING.md release/FLASHING.md 2>/dev/null || true
 
           echo "tarballs collected: $count"
           echo "--- release contents ---"

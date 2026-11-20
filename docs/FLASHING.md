@@ -6,6 +6,21 @@
 
 ---
 
+## Step 0 — let the script check your device
+
+With the device booted normally and USB debugging on:
+
+```bash
+python3 scripts/check_device.py
+```
+
+It reads the model, build string and verified-boot state, and prints either
+**compatible** or **DO NOT FLASH** with the reason. It writes nothing to the
+device. Do not skip this because "it is probably fine" — the check exists
+precisely for the case where it is not.
+
+---
+
 ## Before anything: check the binary
 
 Your device must be on, or be able to return to, **bootloader binary 9** —
@@ -66,13 +81,34 @@ Unlocking:
 
 Do not proceed if any of that is unacceptable.
 
-### ⚠️ Verified boot
+### ⚠️ Verified boot — you will almost certainly need the vbmeta image
 
-If the device refuses to boot after flashing (red/yellow warning, or a boot
-loop straight back to Download Mode), Android Verified Boot has rejected the
-unsigned image. Resolving this needs a patched `vbmeta` with verification
-disabled, flashed to the `vbmeta` partition. That is a separate step and is
-**not automated by this project yet**.
+The kernels in this release are **unsigned**. On a device with verified boot
+enforcing, Android Verified Boot rejects them and the bootloader drops back to
+Download Mode. That looks identical to a broken kernel, so do not conclude the
+build is bad when this happens.
+
+Every release therefore also ships a `vbmeta.img` with both
+`disable-verity` and `disable-verification` set (this is `avbtool --flags 2`,
+verified at build time). Flash it **to the `vbmeta` partition** together with
+`boot.img`.
+
+In Odin:
+- `boot.img` → **AP**
+- `vbmeta.img` → **AP** as well, in a second run, or in the same run if your
+  Odin build accepts multiple AP slots
+
+Do not put `vbmeta.img` inside the boot tar — it must land on its own
+partition.
+
+**This weakens device security permanently for as long as it is flashed.**
+With verification disabled, nothing checks that your boot or system partitions
+are the ones Samsung signed. Flash the stock `vbmeta.img` again — it is inside
+the stock `AP` tar — to undo it.
+
+If the device still refuses to boot with vbmeta flashed, the bootloader is
+rejecting the kernel itself, not the signature, and the build needs
+investigation rather than more flashing.
 
 ---
 

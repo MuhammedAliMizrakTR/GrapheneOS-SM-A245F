@@ -412,8 +412,44 @@ cp "${WORK}/defconfig-report.${VARIANT}.md" "${DEST}/defconfig-report.md" 2>/dev
 cp "${OUT}/.config" "${DEST}/config-${VARIANT}" 2>/dev/null || true
 cp "${WORK}/build-${VARIANT}.log" "${DEST}/build.log" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# Disabled-verification vbmeta
+#
+# The kernels built here are unsigned. On a locked-verity device AVB rejects
+# them and the bootloader falls back to Download Mode, which looks exactly
+# like a bad kernel. A vbmeta image carrying both the disable-verity and
+# disable-verification flags lets the device boot an unsigned boot partition.
+#
+# This is produced per variant so a tester can flash boot.img and vbmeta.img
+# from the same folder and knows they belong together.
+# ---------------------------------------------------------------------------
+AVBTOOL="${ROOT}/scripts/third_party/avbtool/avbtool.py"
+if [[ -f "${AVBTOOL}" ]]; then
+    python3 "${AVBTOOL}" make_vbmeta_image \
+        --flags 2 \
+        --padding_size 4096 \
+        --output "${DEST}/vbmeta.img" \
+        || die "failed to produce vbmeta.img"
+    log "vbmeta.img written (flags=2: disable-verity + disable-verification)"
+    # Prove the flags landed instead of trusting the exit status.
+    if python3 "${AVBTOOL}" info_image --image "${DEST}/vbmeta.img" 2>/dev/null \
+            | grep -qE '^Flags:[[:space:]]+2$'; then
+        log "vbmeta flags verified"
+    else
+        die "vbmeta.img does not carry flags=2"
+    fi
+else
+    log "WARNING: avbtool not present, no vbmeta.img in this build"
+fi
+
 # Odin payload
 ( cd "${DEST}" && tar -cf "${NAME}.tar" boot.img && gzip -9 "${NAME}.tar" )
+
+# Separate vbmeta payload: it goes to the vbmeta partition, so it must not be
+# bundled into the AP tar (that would put it in the wrong partition).
+if [[ -f "${DEST}/vbmeta.img" ]]; then
+    ( cd "${DEST}" && tar -cf "${NAME}_vbmeta.tar" vbmeta.img && gzip -9 "${NAME}_vbmeta.tar" )
+fi
 
 # Version metadata for the release job
 {
