@@ -169,8 +169,21 @@ export CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm
 export OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump
 export READELF=llvm-readelf STRIP=llvm-strip
 
+# LLVM=1 alone does NOT make clang emit AArch64 code. The kernel derives the
+# clang target triple from CROSS_COMPILE (arch/arm64/Makefile ->
+# CLANG_FLAGS += --target=$(notdir $(CROSS_COMPILE:%-=%)), wired in via
+# scripts/Makefile.clang). With CROSS_COMPILE unset, clang falls back to the
+# host triple and the build dies almost immediately with
+#   arch/arm64/include/asm/atomic_lse.h: error: unknown register name 'x1' in asm
+# Only the triple is taken from CROSS_COMPILE here: LD/AR/NM/OBJCOPY are all
+# overridden to the llvm-* equivalents above, so no GNU aarch64 binutils
+# package is required.
+export CROSS_COMPILE="aarch64-linux-gnu-"
+export CLANG_TRIPLE="aarch64-linux-gnu-"
+
 MAKE=(make -C "${KERNEL_SRC}" O="${OUT}" ARCH=arm64
       LLVM=1 LLVM_IAS=1
+      CROSS_COMPILE="${CROSS_COMPILE}"
       LOCALVERSION="-a24-${VARIANT}")
 
 log "building (jobs=${JOBS})"
