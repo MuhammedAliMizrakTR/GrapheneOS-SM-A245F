@@ -41,6 +41,14 @@ OVERRIDES = {
     "LTO_CLANG": ("n", "disable all LTO variants"),
     "DEBUG_INFO": ("n", "DWARF debug info costs GB of disk; not needed to boot"),
 
+    # Samsung's defconfig treats every compiler warning as an error. The
+    # MediaTek vendor code does not build warning-clean with a newer clang
+    # (cameraisp/dpe emits -Wsometimes-uninitialized diagnostics that were
+    # never seen by whatever clang Samsung used), so WERROR alone stops the
+    # build long before the device tree is reached. Warnings are still printed
+    # and still worth reading; they just should not end the build.
+    "WERROR": ("n", "vendor MTK code is not warning-clean with this clang"),
+
     # The shipped defconfig hardcodes Samsung's build-server path as the KMI
     # whitelist:
     #   CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/.../abi_symbollist.raw"

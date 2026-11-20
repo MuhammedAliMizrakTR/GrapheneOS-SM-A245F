@@ -107,7 +107,12 @@ jobs:
           echo "build exit code: $RC"
           echo $RC > build-rc.txt
           if [ "$RC" -ne 0 ]; then
-            MSG=$(grep -nE "error:|Error [0-9]|\*\*\*|fatal|undefined reference|No such file" build-trace.log | grep -viE "^.*(Werror|error_|_error)" | tail -14 | sed ':a;N;$!ba;s/\n/%0A/g')
+            # Prefer real compiler diagnostics over the make error cascade.
+            SEL=$(grep -E "error:|fatal error:|undefined reference" build-trace.log | grep -v "\*\*\*" | head -12)
+            if [ -z "$SEL" ]; then
+              SEL=$(grep -E "\*\*\*|Error [0-9]|No such file" build-trace.log | tail -12)
+            fi
+            MSG=$(printf '%s\n' "$SEL" | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::error title=Build failed (rc=$RC)::${MSG}"
             exit "$RC"
           fi
