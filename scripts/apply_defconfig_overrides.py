@@ -41,6 +41,19 @@ OVERRIDES = {
     "LTO_CLANG": ("n", "disable all LTO variants"),
     "DEBUG_INFO": ("n", "DWARF debug info costs GB of disk; not needed to boot"),
 
+    # The shipped defconfig hardcodes Samsung's build-server path as the KMI
+    # whitelist:
+    #   CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/.../abi_symbollist.raw"
+    # That file exists nowhere else, so the build dies at
+    #   GEN include/generated/autoksyms.h
+    #   ERROR: '<path>' whitelist file not found
+    # TRIM_UNUSED_KSYMS only drops *unused* exports from ksymtab at build time;
+    # it does not affect the runtime ABI that vendor modules bind against
+    # (that is CONFIG_MODVERSIONS). Disabling it leaves every export in place,
+    # which is a strict superset of any whitelist, so no vendor module can lose
+    # a symbol it needs.
+    "TRIM_UNUSED_KSYMS": ("n", "whitelist path is hardcoded to Samsung's build server"),
+
     # ---- Samsung security features that block unsigned kernels -------------
     "RKP": ("n", "Real-time Kernel Protection rejects unsigned images"),
     "KDP": ("n", "Kernel Data Protection"),
@@ -56,7 +69,14 @@ OVERRIDES = {
 }
 
 # Kept enabled on purpose. Removing these breaks vendor module loading.
-KEEP = ("MODVERSIONS", "TRIM_UNUSED_KSYMS")
+KEEP = ("MODVERSIONS",)
+
+# Removed outright rather than set to "n": this is a string option, and its
+# shipped value is the dead Samsung build-server path. It depends on
+# TRIM_UNUSED_KSYMS, which we disable, so leaving the line behind is merely
+# cosmetically confusing -- but a stale absolute path in a published defconfig
+# is exactly the kind of thing that misleads the next reader.
+DROP = ("UNUSED_KSYMS_WHITELIST",)
 
 
 def patch(text, overrides):
@@ -66,6 +86,9 @@ def patch(text, overrides):
 
     for line in lines:
         m = re.match(r"^(CONFIG_([A-Z0-9_]+))=", line)
+        if m and m.group(2) in DROP:
+            seen.add(m.group(2))
+            continue
         if m and m.group(2) in overrides:
             name = m.group(2)
             value, _ = overrides[name]
@@ -126,6 +149,11 @@ def main():
         value, reason = applied[name]
         mark = "" if name in seen else " *(appended)*"
         report.append("| `CONFIG_%s` | `%s` | %s%s |" % (name, value, reason, mark))
+    report.append("")
+    report.append("## Removed outright")
+    for name in DROP:
+        report.append("- `CONFIG_%s` — shipped value was a dead absolute path "
+                      "on Samsung's build server" % name)
     report.append("")
     report.append("## Deliberately kept enabled")
     for k in KEEP:

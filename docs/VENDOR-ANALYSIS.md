@@ -79,12 +79,37 @@ out cleanly.
 | Config | Why it must stay |
 |---|---|
 | `MODVERSIONS` | vendor modules carry version magic; removing this breaks loading |
-| `TRIM_UNUSED_KSYMS` | same — part of the module ABI contract |
 | `EXT_MODULES` | the vendor module build list |
 | all `MTK_*` / `COMMON_CLK_MT6789_*` | hardware drivers |
 | DTB set under `arch/arm64/boot/dts/mediatek/a24/` | device tree |
 
-## 5. SUSFS
+## 5. A build-breaking path baked into the defconfig
+
+The shipped `a24_defconfig` contains one line that cannot work anywhere except
+Samsung's own build server:
+
+```
+CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/workspace/P4_1716/android/out/target/product/a24/obj/KERNEL_OBJ/kernel-5.10/abi_symbollist.raw"
+```
+
+It is an absolute path to a throw-away file inside a specific engineer's
+workspace. Because the option is active, the kernel build runs
+`scripts/gen_autoksyms.sh`, which refuses to continue without that file:
+
+```
+  GEN     include/generated/autoksyms.h
+ERROR: '/home/dpi/qb5_8814/.../abi_symbollist.raw' whitelist file not found
+make[1]: *** [Makefile:1298: include/generated/autoksyms.h] Error 1
+```
+
+The fix is to drop `CONFIG_TRIM_UNUSED_KSYMS` entirely and delete the stale
+path. This is safe for the vendor modules: `TRIM_UNUSED_KSYMS` only *removes*
+exports that nothing in the build appears to use, so turning it off leaves a
+superset of the whitelist in place — every symbol a vendor module could ask for
+is still exported. The runtime module-ABI contract is `CONFIG_MODVERSIONS`,
+which stays on.
+
+## 6. SUSFS
 
 **Not present.** A search for `susfs` across `kernel-5.10` returns zero files,
 and there is no `CONFIG_KSU_SUSFS` in the tree.
@@ -99,7 +124,7 @@ would be a plain KernelSU plus an extra dependency. The build therefore offers:
 The build script still enables `CONFIG_KSU_SUSFS` **automatically** if a future
 kernel tree ships the hooks, so nothing is lost when the tree changes.
 
-## 6. Still unverified — needs local firmware extraction
+## 7. Still unverified — needs local firmware extraction
 
 These cannot be answered without unpacking `super.img`:
 
@@ -127,7 +152,7 @@ lpunpack --slot=0 super.img super_out/
 That extraction is the next concrete task, and it is the one that would turn
 the last column of the table above from **unverified** into fact.
 
-## 7. Risk summary
+## 8. Risk summary
 
 | Risk | Severity | Status |
 |---|---|---|
