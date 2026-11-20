@@ -1,0 +1,60 @@
+name: Boot report
+description: Report a kernel build result on real hardware
+title: "[BOOT] "
+labels: ["boot-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not include IMEI, serial numbers, phone numbers, ICCID, account
+        credentials or unlock tokens.** Crop them out of screenshots.
+  - type: input
+    id: model
+    attributes:
+      label: Exact model
+      description: Settings -> About phone. SM-A245F, SM-A245F/DS or SM-A245F/DSN
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build number before flashing
+      placeholder: A245FXXS9DYG1
+    validations:
+      required: true
+  - type: input
+    id: binary
+    attributes:
+      label: Bootloader binary
+      description: 5th character from the end of the build number
+    validations:
+      required: true
+  - type: dropdown
+    id: variant
+    attributes:
+      label: Variant flashed
+      options: [vanilla, kernelsu, bakasu]
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Booted, everything works
+        - Booted, some hardware broken
+        - Boot loop
+        - Black screen
+        - Falls straight back to Download Mode
+        - Flash itself failed
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What broke, what you saw, any log or dmesg you could capture
+  - type: input
+    id: sha
+    attributes:
+      label: SHA256 of the archive you flashed

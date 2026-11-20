@@ -1,0 +1,27 @@
+# Build outputs — never commit binaries
+dist/
+out/
+work/
+*.tar
+*.tar.gz
+*.img
+*.ko
+*.o
+*.a
+*.so
+
+# Toolchain / source caches
+toolchain/
+kernel/
+.prebuilts/
+
+# Python
+__pycache__/
+*.pyc
+.Python
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*~
