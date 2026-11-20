@@ -29,6 +29,26 @@ MediaTek-Samsung bring-up knowledge comes from a handful of specific devices.
 So "binary 9" is the **bootloader revision**, not Android 9. The build is
 Android 15 / One UI 7.0, security patch 2025-08-01.
 
+### The three numbers, and why they get confused
+
+| Number | In `A245FXXS9DYG1` | What it is |
+|---|---|---|
+| Android OS version | — (not encoded) | Android **15**, One UI **7.0** |
+| Bootloader binary | `9` | rollback fuse counter, `1`–`E` |
+| One UI index letter | `D` | generation marker, **not** a binary |
+
+Three traps, all of which are easy to fall into:
+
+1. **`9` is not "Android 9".** It is the fifth character from the end. The
+   device is on Android 15. Android 9 would be a different, far older kernel.
+2. **`D` is not a binary and not a downgrade marker.** `D` = One UI 7. `E` =
+   One UI 8. They are independent of the binary digit. A firmware `…EZE1…`
+   can be binary `C`; a firmware `…DYG1…` can be binary `9`.
+3. **`S` in `XXS9`** is the update type (security), not a serial.
+
+A build string alone is therefore not enough. Read the fifth character from
+the end for the binary, and the letters after it for the One UI generation.
+
 > The same field is called "binary", "bit" or "SW REV" depending on who is
 > writing. It drives the rollback-prevention fuses, which is why it matters
 > more than any other part of the string.
