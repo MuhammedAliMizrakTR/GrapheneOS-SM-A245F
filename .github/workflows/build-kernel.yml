@@ -93,14 +93,26 @@ jobs:
             work/toolchain
           key: ksrc-${{ hashFiles('config.env') }}
 
+      - name: Preflight
+        run: |
+          set -x
+          bash --version | head -1
+          python3 -c "import kconfiglib; print('kconfiglib', kconfiglib.VERSION)"
+          make --version | head -1
+          git --version
+          du -sh . 
+          test -f config.env && echo "config.env present"
+          bash -n scripts/build-kernel.sh && echo "build-kernel.sh syntax ok"
+
       - name: Build ${{ matrix.variant }}
         run: |
+          set -x
           chmod +x scripts/*.sh scripts/*.py
           FLAGS="--variant ${{ matrix.variant }} --jobs $(nproc)"
           if [ "${{ github.event.inputs.hardened }}" = "true" ]; then
             FLAGS="$FLAGS --harden"
           fi
-          ./scripts/build-kernel.sh $FLAGS
+          bash -x ./scripts/build-kernel.sh $FLAGS 2>&1 | tail -200
 
       - name: Collect build info
         id: info
