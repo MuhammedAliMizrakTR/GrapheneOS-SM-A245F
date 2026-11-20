@@ -296,7 +296,23 @@ if [[ -n "${KSU_REPO_DIR}" ]]; then
     fi
 
     OBJ="$(find "${OUT}" -name 'kernelsu.o' -o -name 'ksu.o' 2>/dev/null | head -1)"
-    [[ -n "${OBJ}" ]] || die "CONFIG_KSU=y but no kernelsu object was produced"
+    if [[ -z "${OBJ}" ]]; then
+        {
+            echo "=== DIAG: KSU wiring ==="
+            echo "-- drivers/Makefile tail --"; tail -5 "${KERNEL_SRC}/drivers/Makefile"
+            echo "-- symlink --"; ls -la "${KERNEL_SRC}/drivers/kernelsu" 2>&1
+            echo "-- symlink target Kbuild exists --"; ls -la "${KERNEL_SRC}/drivers/kernelsu/Kbuild" 2>&1
+            echo "-- Kbuild obj line --"; grep -n 'obj-.*kernelsu' "${KERNEL_SRC}/drivers/kernelsu/Kbuild" 2>&1
+            echo "-- drivers/Kconfig tail --"; tail -5 "${KERNEL_SRC}/drivers/Kconfig"
+            echo "-- .config KSU lines --"; grep -E 'KSU' "${OUT}/.config" || echo none
+            echo "-- any kernelsu output dir at all --"; find "${OUT}/drivers" -maxdepth 1 -name 'kernelsu*' 2>&1
+            echo "-- log lines mentioning kernelsu --"
+            grep -iE 'kernelsu' "${WORK}/build-${VARIANT}.log" | tail -20 || echo "(none)"
+        } 2>&1 | tee "${WORK}/ksu-diag.txt"
+        MSG=$(sed ':a;N;$!ba;s/\n/%0A/g' "${WORK}/ksu-diag.txt")
+        echo "::error title=KSU diagnostics::${MSG}"
+        die "CONFIG_KSU=y but no kernelsu object was produced"
+    fi
     log "KernelSU object present: ${OBJ}"
 
     # The built kernel must carry the KSU symbol table entries, otherwise the
