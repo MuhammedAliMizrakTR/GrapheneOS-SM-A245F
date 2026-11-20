@@ -1,0 +1,216 @@
+name: Build kernel
+
+# ============================================================================
+#  Builds three kernel variants for the Samsung Galaxy A24 (SM-A245F) against
+#  the A245FXXS9DYG1 firmware base, then publishes a single GitHub Release
+#  containing the Odin payloads and the exactly-matching manager APKs.
+#
+#  Why CI: the kernel is a 5.10 GKI tree with the whole MediaTek vendor module
+#  set. It needs ~16 GB of disk and several GB of RAM, plus flex/bison and a
+#  full clang toolchain. Running it on GitHub runners keeps the build
+#  reproducible and keeps produced binaries out of git history.
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Which variant to build'
+        required: true
+        default: 'all'
+        type: choice
+        options: [all, vanilla, kernelsu, kernelsu-up]
+      hardened:
+        description: 'Keep Samsung security features on (RKP/KDP/DEFEX/FIVE/PROCA). Boot is unlikely.'
+        required: true
+        default: false
+        type: boolean
+      publish:
+        description: 'Publish a GitHub Release'
+        required: true
+        default: false
+        type: boolean
+
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kernel-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          V="${{ github.event.inputs.variant || 'all' }}"
+          if [ "$V" = "all" ]; then
+            echo 'matrix=["vanilla","kernelsu","kernelsu-up"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=[\"$V\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # kconfig frontend needs these; we avoid them at configure time but the
+      # final `make` still invokes scripts that benefit from them.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            bc bison flex libssl-dev libelf-dev lz4 zstd cpio \
+            python3 python3-pip rsync kmod
+          pip3 install --quiet kconfiglib
+
+      - name: Show toolchain budget
+        run: |
+          echo "CPUs : $(nproc)"
+          echo "RAM  : $(free -h | awk '/Mem:/{print $2}')"
+          echo "DISK : $(df -h / | awk 'NR==2{print $4}')"
+
+      - name: Cache kernel source and toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/kernel
+            work/toolchain
+          key: ksrc-${{ hashFiles('config.env') }}
+
+      - name: Build ${{ matrix.variant }}
+        run: |
+          chmod +x scripts/*.sh scripts/*.py
+          FLAGS="--variant ${{ matrix.variant }} --jobs $(nproc)"
+          if [ "${{ github.event.inputs.hardened }}" = "true" ]; then
+            FLAGS="$FLAGS --harden"
+          fi
+          set +e
+          ./scripts/build-kernel.sh $FLAGS 2>&1 | tee build-trace.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "build exit code: $RC"
+          echo $RC > build-rc.txt
+          if [ "$RC" -ne 0 ]; then
+            # Prefer real compiler diagnostics over the make error cascade.
+            SEL=$(grep -E "error:|fatal error:|undefined reference" build-trace.log | grep -v "\*\*\*" | head -12)
+            if [ -z "$SEL" ]; then
+              SEL=$(grep -E "\*\*\*|Error [0-9]|No such file" build-trace.log | tail -12)
+            fi
+            MSG=$(printf '%s\n' "$SEL" | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Build failed (rc=$RC)::${MSG}"
+            exit "$RC"
+          fi
+
+      # The Actions job log is served from blob storage that some networks
+      # cannot reach, so on failure the tail of the trace is attached as a
+      # workflow annotation, which is always reachable.
+      - name: Report failure inline
+        if: failure()
+        run: |
+          if [ -f build-trace.log ]; then
+            MSG=$(tail -c 4000 build-trace.log | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Build trace tail::${MSG}"
+          else
+            echo "::error title=Build trace::build-trace.log missing"
+          fi
+
+      - name: Collect build info
+        id: info
+        if: success()
+        run: |
+          D="$(ls -d dist/a24_* 2>/dev/null | tail -1)"
+          if [ -z "$D" ]; then echo "no dist output produced"; exit 1; fi
+          echo "dir=$D" >> "$GITHUB_OUTPUT"
+          cat "$D/build-info.env" >> "$GITHUB_OUTPUT"
+          du -sh "$D"
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: kernel-${{ matrix.variant }}
+          path: dist/a24_*/
+          retention-days: 30
+
+  release:
+    needs: [prepare, build]
+    # Publishing is opt-in. A tag push builds and uploads artifacts, but
+    # does NOT create a release unless publish=true is passed explicitly --
+    # tag pushes are used for routine CI iterations, and those must never
+    # silently publish.
+    if: github.event.inputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.img' -o -name '*.md' -o -name 'config-*' \) \
+            -exec cp {} release/ \;
+          ls -la release/
+
+      # The manager APK version MUST equal the kernel's version code, otherwise
+      # the app reports the kernel as unsupported. We record what we built and
+      # attach the matching upstream APK when one can be resolved.
+      - name: Resolve matching manager APKs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          source config.env
+          # KernelSU-Next manager
+          TAGN="$(gh api "$KSU_NEXT_UPSTREAM_API" --jq .tag_name || true)"
+          echo "upstream KernelSU-Next: ${TAGN:-<none>}"
+          echo "${TAGN:-none}" > release/kernelsu-next-tag.txt
+          if [ -n "$TAGN" ]; then
+            gh release download "$TAGN" -R KernelSU-Next/KernelSU-Next -p '*_KernelSU_Next_*.apk' -D release/ || true
+            gh release download "$TAGN" -R KernelSU-Next/KernelSU-Next -p 'aarch64_android12-5.10*.ko' -D release/ || true
+          fi
+          # upstream KernelSU manager
+          TAGU="$(gh api "$KSU_UPSTREAM_API" --jq .tag_name || true)"
+          echo "upstream KernelSU: ${TAGU:-<none>}"
+          echo "${TAGU:-none}" > release/kernelsu-upstream-tag.txt
+          if [ -n "$TAGU" ]; then
+            gh release download "$TAGU" -R tiann/KernelSU -p '*_KernelSU_v*.apk' -D release/ || true
+          fi
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt
+
+      - name: Publish release
+        if: hashFiles('release/*.tar.gz') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="kernel-$(date -u +%Y%m%d-%H%M)"
+          fi
+          gh release create "$TAG" release/* \
+            --title "Kernel build ${TAG}" \
+            --notes-file docs/RELEASE_NOTES.md \
+            --prerelease
