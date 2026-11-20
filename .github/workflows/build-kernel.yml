@@ -30,6 +30,11 @@ on:
         required: true
         default: false
         type: boolean
+      release_tag:
+        description: 'Release tag to publish under (blank = date-stamped)'
+        required: false
+        default: 'v1.0.0-kernel'
+        type: string
 
   push:
     tags:
@@ -162,36 +167,130 @@ jobs:
         with:
           path: artifacts/
 
-      - name: Flatten artifacts
+      # Each build job uploads its own dist/a24_<variant>_<base>_<stamp>/ under an
+      # artifact called kernel-<variant>, so the paths are already unique. They
+      # must stay unique: flattening everything into one directory made the
+      # three boot.img files overwrite each other, so the release shipped a
+      # single image with no indication of which variant it belonged to.
+      - name: Collect artifacts, preserving the variant in every filename
         run: |
+          set -euo pipefail
+          echo "--- raw artifact tree ---"
+          find artifacts -type f | sort || true
+
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.img' -o -name '*.md' -o -name 'config-*' \) \
-            -exec cp {} release/ \;
+          shopt -s globstar nullglob
+          count=0
+          for f in artifacts/**/*; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            # The variant is in the artifact directory (kernel-<variant>) and,
+            # for the tarballs, in the filename itself (a24_<variant>_...).
+            variant=""
+            for v in vanilla kernelsu-up kernelsu; do
+              case "$f" in
+                *"/kernel-$v/"*|*"a24_${v}_"*) variant="$v"; break ;;
+              esac
+            done
+            case "$base" in
+              *.tar.gz)            cp "$f" "release/$base"; count=$((count+1)) ;;
+              boot.img)            [ -n "$variant" ] && cp "$f" "release/boot-${variant}.img" ;;
+              config-*)            [ -n "$variant" ] && cp "$f" "release/config-${variant}" ;;
+              build-info.env)      [ -n "$variant" ] && cp "$f" "release/build-info-${variant}.env" ;;
+              defconfig-report.md) [ -n "$variant" ] && cp "$f" "release/defconfig-report-${variant}.md" ;;
+              build.log)           [ -n "$variant" ] && cp "$f" "release/build-${variant}.log" ;;
+              *)                   [ -n "$variant" ] && cp "$f" "release/${variant}-${base}" ;;
+            esac
+          done
+
+          echo "tarballs collected: $count"
+          echo "--- release contents ---"
           ls -la release/
 
       # The manager APK version MUST equal the kernel's version code, otherwise
       # the app reports the kernel as unsupported. We record what we built and
       # attach the matching upstream APK when one can be resolved.
+      # The manager APK version MUST equal the kernel's version code, otherwise
+      # the app reports the kernel as unsupported. Each build job recorded that
+      # code in build-info-<variant>.env, so the APK is chosen from it rather
+      # than from "whatever tag happens to be newest".
       - name: Resolve matching manager APKs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           source config.env
-          # KernelSU-Next manager
-          TAGN="$(gh api "$KSU_NEXT_UPSTREAM_API" --jq .tag_name || true)"
-          echo "upstream KernelSU-Next: ${TAGN:-<none>}"
-          echo "${TAGN:-none}" > release/kernelsu-next-tag.txt
-          if [ -n "$TAGN" ]; then
-            gh release download "$TAGN" -R KernelSU-Next/KernelSU-Next -p '*_KernelSU_Next_*.apk' -D release/ || true
-            gh release download "$TAGN" -R KernelSU-Next/KernelSU-Next -p 'aarch64_android12-5.10*.ko' -D release/ || true
+
+          get_code() {
+            local f="release/build-info-$1.env"
+            [ -f "$f" ] || { echo none; return; }
+            sed -n 's/^KERNELSU_VERSION_CODE=//p' "$f" | head -1
+          }
+
+          # --- KernelSU-Next (variant: kernelsu) ---
+          CODE_N="$(get_code kernelsu)"
+          echo "built kernelsu version code: ${CODE_N}"
+          {
+            echo "variant=kernelsu"
+            echo "kernel_version_code=${CODE_N}"
+            echo "source=${KSU_NEXT_REPO} @ ${KSU_NEXT_REF}"
+          } > release/kernelsu-version.txt
+
+          if [ "${CODE_N}" != "none" ] && [ -n "${CODE_N}" ]; then
+            # Walk upstream tags newest-first and stop at the release whose APK
+            # filename carries exactly this version code.
+            FOUND=""
+            for TAG in $(gh api repos/KernelSU-Next/KernelSU-Next/releases --jq '.[].tag_name' | head -20); do
+              if gh release view "$TAG" -R KernelSU-Next/KernelSU-Next --json assets \
+                   --jq '.assets[].name' 2>/dev/null | grep -q "${CODE_N}"; then
+                FOUND="$TAG"; break
+              fi
+            done
+            if [ -n "$FOUND" ]; then
+              echo "matching KernelSU-Next release: $FOUND"
+              gh release download "$FOUND" -R KernelSU-Next/KernelSU-Next \
+                -p "*_${CODE_N}-release.apk" -D release/ || true
+              gh release download "$FOUND" -R KernelSU-Next/KernelSU-Next \
+                -p 'aarch64_android12-5.10*.ko' -D release/ || true
+              echo "$FOUND" > release/kernelsu-tag.txt
+            else
+              echo "::warning::no upstream KernelSU-Next release ships versionCode ${CODE_N}"
+              echo "none" > release/kernelsu-tag.txt
+            fi
           fi
-          # upstream KernelSU manager
-          TAGU="$(gh api "$KSU_UPSTREAM_API" --jq .tag_name || true)"
-          echo "upstream KernelSU: ${TAGU:-<none>}"
-          echo "${TAGU:-none}" > release/kernelsu-upstream-tag.txt
-          if [ -n "$TAGU" ]; then
-            gh release download "$TAGU" -R tiann/KernelSU -p '*_KernelSU_v*.apk' -D release/ || true
+
+          # --- upstream KernelSU (variant: kernelsu-up) ---
+          CODE_U="$(get_code kernelsu-up)"
+          echo "built kernelsu-up version code: ${CODE_U}"
+          {
+            echo "variant=kernelsu-up"
+            echo "kernel_version_code=${CODE_U}"
+            echo "source=${KSU_UPSTREAM_REPO} @ ${KSU_UPSTREAM_REF}"
+          } > release/kernelsu-up-version.txt
+
+          if [ "${CODE_U}" != "none" ] && [ -n "${CODE_U}" ]; then
+            FOUNDU=""
+            for TAG in $(gh api repos/tiann/KernelSU/releases --jq '.[].tag_name' | head -20); do
+              if gh release view "$TAG" -R tiann/KernelSU --json assets \
+                   --jq '.assets[].name' 2>/dev/null | grep -q "${CODE_U}"; then
+                FOUNDU="$TAG"; break
+              fi
+            done
+            if [ -n "$FOUNDU" ]; then
+              echo "matching upstream KernelSU release: $FOUNDU"
+              gh release download "$FOUNDU" -R tiann/KernelSU -p "*_${CODE_U}-release.apk" -D release/ || true
+              echo "$FOUNDU" > release/kernelsu-up-tag.txt
+            else
+              echo "::warning::no upstream KernelSU release ships versionCode ${CODE_U}"
+              echo "none" > release/kernelsu-up-tag.txt
+            fi
+          fi
+
+          # Fail loudly rather than shipping a release with a mismatched pair.
+          if ls release/*.apk >/dev/null 2>&1; then
+            echo "APKs attached:"; ls -1 release/*.apk
+          else
+            echo "::warning::no manager APK could be matched to the built kernel version codes"
           fi
           ls -la release/
 
@@ -201,15 +300,33 @@ jobs:
           sha256sum * > SHA256SUMS.txt || true
           cat SHA256SUMS.txt
 
+      # No `if: hashFiles(...)` here. hashFiles only searches under
+      # $GITHUB_WORKSPACE, and its result in a step-level condition is not
+      # reliable, so the step silently skipped even though three tarballs had
+      # just been collected. The guard below fails loudly instead.
       - name: Publish release
-        if: hashFiles('release/*.tar.gz') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # Prefer the explicit tag input so a manual run can name the release
+          # (e.g. v1.0.0-kernel) instead of getting a throwaway date stamp.
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ] && [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [ -z "$TAG" ]; then
             TAG="kernel-$(date -u +%Y%m%d-%H%M)"
           fi
+          echo "publishing as: $TAG"
+
+          shopt -s nullglob
+          TARS=(release/*.tar.gz)
+          if [ ${#TARS[@]} -eq 0 ]; then
+            echo "::error::no tarball was collected, refusing to publish"
+            exit 1
+          fi
+          echo "attaching ${#TARS[@]} odin payload(s): ${TARS[*]}"
+
           gh release create "$TAG" release/* \
             --title "Kernel build ${TAG}" \
             --notes-file docs/RELEASE_NOTES.md \
