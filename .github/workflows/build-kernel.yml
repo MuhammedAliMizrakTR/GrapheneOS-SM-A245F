@@ -100,8 +100,23 @@ jobs:
           if [ "${{ github.event.inputs.hardened }}" = "true" ]; then
             FLAGS="$FLAGS --harden"
           fi
-          ./scripts/build-kernel.sh $FLAGS
+          set +e
+          ./scripts/build-kernel.sh $FLAGS 2>&1 | tee build-trace.log
+          echo "exit=${PIPESTATUS[0]}" | tee -a build-trace.log
+          set -e
 
+      # The Actions job log is served from blob storage that some networks
+      # cannot reach, so on failure the tail of the trace is attached as a
+      # workflow annotation, which is always reachable.
+      - name: Report failure inline
+        if: failure()
+        run: |
+          if [ -f build-trace.log ]; then
+            tail -c 5000 build-trace.log | sed 's/^/TRACE: /'
+            { echo "::error title=Build trace tail::"; tail -c 5000 build-trace.log; } || true
+          else
+            echo "::error title=Build trace::build-trace.log missing"
+          fi
 
       - name: Collect build info
         id: info
