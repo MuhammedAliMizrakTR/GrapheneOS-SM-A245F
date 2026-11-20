@@ -7,11 +7,18 @@
 
 | File | For |
 |---|---|
-| `a24_vanilla_*.tar.gz` | Stock kernel, no root. **Start here.** |
-| `a24_kernelsu_*.tar.gz` | KernelSU-Next kernel + matching manager APK |
-| `a24_kernelsu-up_*.tar.gz` | Upstream KernelSU kernel + matching manager APK |
-| `aarch64_android12-5.10_kernelsu.ko` | LKM fallback, for stock kernels only |
+| `a24_vanilla_A245FXXS9DYG1_*.tar.gz` | Stock kernel, no root. **Start here.** |
+| `a24_kernelsu_A245FXXS9DYG1_*.tar.gz` | KernelSU-Next kernel |
+| `a24_kernelsu-up_A245FXXS9DYG1_*.tar.gz` | Upstream KernelSU kernel |
+| `KernelSU_Next_v*_*-release.apk` | Manager for the `kernelsu` image — versionCode must match |
+| `KernelSU_v*_*-release.apk` | Manager for the `kernelsu-up` image — versionCode must match |
+| `boot-<variant>.img` | Bare boot image, same content as the tar |
+| `build-info-<variant>.env` | Exact version codes this build produced |
+| `kernelsu-version.txt` / `kernelsu-up-version.txt` | Source ref + version code pairing |
 | `SHA256SUMS.txt` | Verify every download against this |
+
+Each `*.tar.gz` is an **Odin AP payload** containing a single `boot.img`, which
+flashes to the `boot` partition. Nothing else is touched.
 
 ## Compatibility
 

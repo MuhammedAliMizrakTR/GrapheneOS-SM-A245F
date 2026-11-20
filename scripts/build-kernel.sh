@@ -78,35 +78,102 @@ clang --version | head -1 || die "clang not runnable"
 #    docs describe. The version is read back afterwards so the release can
 #    ship the matching manager APK.
 # ---------------------------------------------------------------------------
+#  A clone alone does nothing: Kbuild only descends into a directory that is
+#  referenced from a parent Makefile, and the CONFIG_KSU symbol only exists if
+#  some parent Kconfig sources the module's Kconfig. Without both, the
+#  defconfig's `CONFIG_KSU=y` is an unknown symbol, kconfiglib silently drops
+#  it, and the resulting kernel has no root at all while still reporting a
+#  successful build. This mirrors kernel/setup.sh from upstream.
+KSU_DIR=""
+KSU_REPO_DIR=""
 case "${VARIANT}" in
     kernelsu)
         log "fetching KernelSU-Next (${KSU_NEXT_REF})"
         rm -rf "${KERNEL_SRC}/KernelSU-Next"
         git clone --depth=1 --single-branch --branch "${KSU_NEXT_REF}" \
             "${KSU_NEXT_REPO}" "${KERNEL_SRC}/KernelSU-Next"
-        KSU_DIR="${KERNEL_SRC}/KernelSU-Next"
+        KSU_REPO_DIR="${KERNEL_SRC}/KernelSU-Next"
         ;;
     kernelsu-up)
         log "fetching upstream KernelSU (${KSU_UPSTREAM_REF})"
         rm -rf "${KERNEL_SRC}/KernelSU"
         git clone --depth=1 --single-branch --branch "${KSU_UPSTREAM_REF}" \
             "${KSU_UPSTREAM_REPO}" "${KERNEL_SRC}/KernelSU"
-        KSU_DIR="${KERNEL_SRC}/KernelSU"
-        ;;
-    *)
-        KSU_DIR=""
+        KSU_REPO_DIR="${KERNEL_SRC}/KernelSU"
         ;;
 esac
 
+if [[ -n "${KSU_REPO_DIR}" ]]; then
+    KSU_SUBMODULE="${KSU_REPO_DIR}/kernel"
+    [[ -f "${KSU_SUBMODULE}/Kconfig" ]] || die "KernelSU kernel/Kconfig missing in ${KSU_REPO_DIR}"
+    [[ -f "${KSU_SUBMODULE}/Kbuild"  ]] || die "KernelSU kernel/Kbuild missing in ${KSU_REPO_DIR}"
+
+    DRIVERS_DIR="${KERNEL_SRC}/drivers"
+
+    # 1. Expose the module tree as drivers/kernelsu
+    rm -rf "${DRIVERS_DIR}/kernelsu"
+    ln -sfn "${KSU_SUBMODULE}" "${DRIVERS_DIR}/kernelsu"
+
+    # 2. Make Kbuild descend into it
+    if ! grep -q "kernelsu" "${DRIVERS_DIR}/Makefile"; then
+        printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "${DRIVERS_DIR}/Makefile"
+    fi
+
+    # 3. Make the CONFIG_KSU symbol exist by sourcing its Kconfig
+    if ! grep -q 'drivers/kernelsu/Kconfig' "${DRIVERS_DIR}/Kconfig"; then
+        # Insert the source line immediately BEFORE the final endmenu, keeping
+        # that endmenu. (Dropping it would unbalance the top-level menu and
+        # every subsequent Kconfig parse would fail.)
+        python3 - "${DRIVERS_DIR}/Kconfig" <<'KCONFIG_PATCH'
+import sys
+path = sys.argv[1]
+with open(path) as f:
+    lines = f.read().splitlines()
+idx = None
+for i, line in enumerate(lines):
+    if line.strip() == "endmenu":
+        idx = i
+if idx is None:
+    sys.exit("no endmenu found in %s" % path)
+lines.insert(idx, 'source "drivers/kernelsu/Kconfig"')
+with open(path, "w") as f:
+    f.write("\n".join(lines) + "\n")
+KCONFIG_PATCH
+        grep -q 'drivers/kernelsu/Kconfig' "${DRIVERS_DIR}/Kconfig" || \
+            die "failed to wire KernelSU into drivers/Kconfig"
+    fi
+
+    KSU_DIR="${KSU_REPO_DIR}"
+    log "KernelSU wired into drivers/ (symlink + Makefile + Kconfig)"
+fi
+
 # Read the integrated version code back out of the source, so the release can
 # pair the kernel with the exactly matching manager APK.
+#
+# KernelSU-Next does NOT ship the version as a header macro. kernel/Kbuild
+# computes it at build time as `30000 + git rev-list --count HEAD`, so the same
+# arithmetic is reproduced here from the cloned tree. Upstream KernelSU keeps
+# a header, so that path is still honoured.
 KSU_VERSION_CODE="none"
-if [[ -n "${KSU_DIR}" && -f "${KSU_DIR}/${KSU_VERSION_HEADER}" ]]; then
-    KSU_VERSION_CODE="$(grep -oE '#define[[:space:]]+KERNELSU_VERSION_CODE(_BASE)?[[:space:]]+[0-9]+' \
-        "${KSU_DIR}/${KSU_VERSION_HEADER}" | grep -oE '[0-9]+$' | head -1)"
+KSU_VERSION_TAG="none"
+if [[ -n "${KSU_REPO_DIR}" ]]; then
+    if [[ -f "${KSU_REPO_DIR}/${KSU_VERSION_HEADER}" ]]; then
+        KSU_VERSION_CODE="$(grep -oE '#define[[:space:]]+KERNELSU_VERSION_CODE(_BASE)?[[:space:]]+[0-9]+' \
+            "${KSU_REPO_DIR}/${KSU_VERSION_HEADER}" | grep -oE '[0-9]+$' | head -1 || true)"
+    fi
+    if [[ -z "${KSU_VERSION_CODE}" || "${KSU_VERSION_CODE}" == "none" ]]; then
+        # Version is derived from history, so a --depth=1 clone would give the
+        # wrong answer. Widen the clone first.
+        ( cd "${KSU_REPO_DIR}" && git fetch --unshallow --quiet 2>/dev/null || true )
+        _count="$(cd "${KSU_REPO_DIR}" && git rev-list --count HEAD 2>/dev/null || true)"
+        if [[ -n "${_count}" ]]; then
+            KSU_VERSION_CODE="$((30000 + _count))"
+        fi
+    fi
+    KSU_VERSION_TAG="$(cd "${KSU_REPO_DIR}" && git describe --tags --abbrev=0 2>/dev/null || echo none)"
     [[ -n "${KSU_VERSION_CODE}" ]] || KSU_VERSION_CODE="unparsed"
 fi
-log "integrated KSU version code: ${KSU_VERSION_CODE}"
+log "integrated KSU version code: ${KSU_VERSION_CODE} (tag ${KSU_VERSION_TAG})"
 
 # ---------------------------------------------------------------------------
 # 4. Defconfig
@@ -201,6 +268,39 @@ if [[ -f "${OUT}/.config" ]] && grep -q '^CONFIG_MODULES=y' "${OUT}/.config"; th
     if ! "${MAKE[@]}" INSTALL_MOD_PATH="${OUT}/modules_install" modules_install 2>&1 \
             | tee -a "${WORK}/build-${VARIANT}.log"; then
         log "modules_install failed; in-tree modules are not packaged into boot.img anyway"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 6b. Prove the root solution actually landed
+#     A green build that silently dropped CONFIG_KSU would look identical to a
+#     working one, and would brick the whole point of these images. Fail here
+#     instead of shipping a rootless "kernelsu" kernel.
+# ---------------------------------------------------------------------------
+if [[ -n "${KSU_REPO_DIR}" ]]; then
+    if ! grep -qE '^CONFIG_KSU=[ym]' "${OUT}/.config"; then
+        grep -nE 'KSU' "${OUT}/.config" | head -20 || true
+        die "CONFIG_KSU was requested but is absent from the generated .config"
+    fi
+    if ! grep -q '^CONFIG_KSU=y' "${OUT}/.config"; then
+        die "CONFIG_KSU is not =y in the generated .config (got: $(grep -E '^CONFIG_KSU=' "${OUT}/.config"))"
+    fi
+
+    OBJ="$(find "${OUT}" -name 'kernelsu.o' -o -name 'ksu.o' 2>/dev/null | head -1)"
+    [[ -n "${OBJ}" ]] || die "CONFIG_KSU=y but no kernelsu object was produced"
+    log "KernelSU object present: ${OBJ}"
+
+    # The built kernel must carry the KSU symbol table entries, otherwise the
+    # manager app cannot talk to it even though the config looked right.
+    if command -v nm >/dev/null 2>&1; then
+        KU_IMG="${OUT}/vmlinux"
+        if [[ -f "${KU_IMG}" ]]; then
+            if nm "${KU_IMG}" 2>/dev/null | grep -qiE ' ksu_| kernelsu'; then
+                log "KernelSU symbols found in vmlinux"
+            else
+                die "CONFIG_KSU=y and object built, but no KSU symbols in vmlinux"
+            fi
+        fi
     fi
 fi
 
