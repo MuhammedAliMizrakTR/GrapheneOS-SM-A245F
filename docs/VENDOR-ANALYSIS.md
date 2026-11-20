@@ -158,6 +158,6 @@ the last column of the table above from **unverified** into fact.
 |---|---|---|
 | Vendor modules reject the kernel | high | **reduced** — no symbol dependency on disabled features |
 | Bootloader rejects unsigned `boot.img` | high | **unverified** — likely needs patched `vbmeta` |
-| DTB mismatch | medium | low — DTB source is in-tree for `a24` |
+| DTB mismatch | medium | low — `mt6789.dtb` is built in-tree and packed into `boot.img`; `dtbo` is untouched |
 | Rollback impossible if base is wrong | high | **known** — binary 9 required |
 | VoLTE/IMS breaks | high if a GSI is attempted | not in scope for a kernel-only build |

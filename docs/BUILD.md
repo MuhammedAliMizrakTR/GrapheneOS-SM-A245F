@@ -81,10 +81,52 @@ you must do the same.
 Already handled — LTO is disabled. If you re-enable it, expect the link step to
 need 16 GB+ of RAM.
 
+### `ERROR: '.../abi_symbollist.raw' whitelist file not found`
+
+The shipped `a24_defconfig` sets
+
+```
+CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/.../abi_symbollist.raw"
+```
+
+an absolute path on Samsung's build server. Because `TRIM_UNUSED_KSYMS` is on,
+`gen_autoksyms.sh` demands that file and the build stops at
+`GEN include/generated/autoksyms.h`. `apply_defconfig_overrides.py` disables
+`TRIM_UNUSED_KSYMS` and removes the stale path; see
+`docs/VENDOR-ANALYSIS.md` section 5.
+
+### `error: unknown register name 'x1' in asm`
+
+`LLVM=1` does not imply an AArch64 target triple. `arch/arm64/Makefile`
+derives `--target` from `CROSS_COMPILE`; unset, clang compiles for the x86_64
+host and dies in `arch/arm64/include/asm/atomic_lse.h`. `CROSS_COMPILE` must be
+exported even though every actual tool is an `llvm-*` binary.
+
+### `stack frame size of N bytes ... [-Werror,-Wframe-larger-than=]`
+
+This tree hardcodes `-Werror` into `KBUILD_CFLAGS` in the top-level `Makefile`,
+so `# CONFIG_WERROR is not set` alone does not remove it. `build-kernel.sh`
+passes `KCFLAGS=-Wno-error`, which the Makefile appends last and which wins.
+
+### `mkbootimg not found`
+
+There is none in the kernel tree, in apt, or on PyPI. It is vendored under
+`scripts/third_party/mkbootimg/` (Apache-2.0, from LineageOS). Do not hand-roll
+the header: the 1024-byte `extra_cmdline` array pushes the v1/v2 fields to the
+end of the 1632-byte v0 struct, and getting that wrong produces an image that
+flashes but has a null `dtb_size`.
+
+### `no a24 DTB and no dtbTool available`
+
+`arch/arm64/boot/dts/Makefile` lists one dts dir (`mediatek`) and
+`mediatek/Makefile` has one target, `mt6789.dtb`. Nothing is emitted under
+`dts/mediatek/a24/`. The `dts/samsung/a24/` trees are `/plugin/` overlays for
+the separate `dtbo` partition and are not built here.
+
 ### `MODVERSIONS` errors after changing the defconfig
 
-Do not disable `MODVERSIONS` or `TRIM_UNUSED_KSYMS`. The vendor modules are
-built with version magic; removing these breaks loading.
+Do not disable `MODVERSIONS`. The vendor modules are built with version magic;
+removing it breaks loading.
 
 ### Kernel builds but the device does not boot
 

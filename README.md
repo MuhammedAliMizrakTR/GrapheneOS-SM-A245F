@@ -60,7 +60,8 @@ config.env                        single source of truth (device, base, toolchai
 scripts/gen_config.py             kernel .config without flex/bison
 scripts/apply_defconfig_overrides.py   strips LTO/debug info, disables RKP/KDP/DEFEX/FIVE/PROCA
 scripts/build-kernel.sh           one-shot build: source -> boot.img -> Odin tar.gz
-.github/workflows/build-kernel.yml    CI: three variants -> one release
+scripts/third_party/mkbootimg/    vendored AOSP mkbootimg (Apache-2.0)
+.github/workflows/build-kernel.yml    CI: three variants -> artifacts (release is opt-in)
 docs/FEASIBILITY.md               what is and is not possible on this device
 docs/VENDOR-ANALYSIS.md           vendor module/symbol analysis for this base
 docs/BUILD.md                     build instructions and troubleshooting

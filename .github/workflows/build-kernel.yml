@@ -149,7 +149,11 @@ jobs:
 
   release:
     needs: [prepare, build]
-    if: github.event_name == 'push' || github.event.inputs.publish == 'true'
+    # Publishing is opt-in. A tag push builds and uploads artifacts, but
+    # does NOT create a release unless publish=true is passed explicitly --
+    # tag pushes are used for routine CI iterations, and those must never
+    # silently publish.
+    if: github.event.inputs.publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
