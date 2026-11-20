@@ -114,9 +114,18 @@ if [[ -n "${KSU_REPO_DIR}" ]]; then
     rm -rf "${DRIVERS_DIR}/kernelsu"
     ln -sfn "${KSU_SUBMODULE}" "${DRIVERS_DIR}/kernelsu"
 
-    # 2. Make Kbuild descend into it
+    # 2. Make Kbuild descend into it.
+    #
+    #    obj-y, not obj-$(CONFIG_KSU). drivers/ is itself built as part of a
+    #    module-enabled build and the conditional form was observed to expand
+    #    empty in that context, so Kbuild never entered drivers/kernelsu/ even
+    #    though CONFIG_KSU=y was in .config and verified there. obj-y is
+    #    unconditional, and the directory still compiles to nothing unless
+    #    its own Kbuild selects kernelsu.o (it does: obj-$(CONFIG_KSU) +=
+    #    kernelsu.o sits inside the module's Kbuild, which is evaluated in the
+    #    module directory where the symbol is visible).
     if ! grep -q "kernelsu" "${DRIVERS_DIR}/Makefile"; then
-        printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "${DRIVERS_DIR}/Makefile"
+        printf '\nobj-y += kernelsu/\n' >> "${DRIVERS_DIR}/Makefile"
     fi
 
     # 3. Make the CONFIG_KSU symbol exist by sourcing its Kconfig
