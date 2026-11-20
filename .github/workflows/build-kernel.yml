@@ -102,8 +102,15 @@ jobs:
           fi
           set +e
           ./scripts/build-kernel.sh $FLAGS 2>&1 | tee build-trace.log
-          echo "exit=${PIPESTATUS[0]}" | tee -a build-trace.log
+          RC=${PIPESTATUS[0]}
           set -e
+          echo "build exit code: $RC"
+          echo $RC > build-rc.txt
+          if [ "$RC" -ne 0 ]; then
+            MSG=$(tail -c 3500 build-trace.log | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Build failed (rc=$RC)::${MSG}"
+            exit "$RC"
+          fi
 
       # The Actions job log is served from blob storage that some networks
       # cannot reach, so on failure the tail of the trace is attached as a
