@@ -100,40 +100,21 @@ jobs:
           if [ "${{ github.event.inputs.hardened }}" = "true" ]; then
             FLAGS="$FLAGS --harden"
           fi
-          set +e
-          bash -x ./scripts/build-kernel.sh $FLAGS > build-trace.log 2>&1
-          RC=$?
-          set -e
-          echo "=== exit code: $RC ==="
-          tail -60 build-trace.log || true
-          echo "$RC" > build-rc.txt
-          exit 0
+          ./scripts/build-kernel.sh $FLAGS
 
-      # The job log lives in blob storage that some networks cannot reach, so
-      # publish the trace into the branch itself.
-      - name: Publish trace
-        if: always()
-        run: |
-          D="ci-logs/${{ matrix.variant }}"
-          mkdir -p "$D"
-          cp build-trace.log "$D/" 2>/dev/null || echo "no trace" > "$D/build-trace.log"
-          cp build-rc.txt "$D/" 2>/dev/null || true
-          git config user.name  "ci-diagnostics"
-          git config user.email "ci@localhost"
-          git add -f ci-logs || true
-          git diff --cached --quiet && { echo "nothing to publish"; exit 0; }
-          git commit -m "ci: trace for ${{ matrix.variant }} (diagnostic)"
-          git push origin HEAD:${{ github.ref_name }} || true
 
       - name: Collect build info
         id: info
+        if: success()
         run: |
-          D="$(ls -d dist/a24_* | tail -1)"
+          D="$(ls -d dist/a24_* 2>/dev/null | tail -1)"
+          if [ -z "$D" ]; then echo "no dist output produced"; exit 1; fi
           echo "dir=$D" >> "$GITHUB_OUTPUT"
           cat "$D/build-info.env" >> "$GITHUB_OUTPUT"
           du -sh "$D"
 
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: kernel-${{ matrix.variant }}
           path: dist/a24_*/
