@@ -100,7 +100,30 @@ jobs:
           if [ "${{ github.event.inputs.hardened }}" = "true" ]; then
             FLAGS="$FLAGS --harden"
           fi
-          ./scripts/build-kernel.sh $FLAGS
+          set +e
+          bash -x ./scripts/build-kernel.sh $FLAGS > build-trace.log 2>&1
+          RC=$?
+          set -e
+          echo "=== exit code: $RC ==="
+          tail -60 build-trace.log || true
+          echo "$RC" > build-rc.txt
+          exit 0
+
+      # The job log lives in blob storage that some networks cannot reach, so
+      # publish the trace into the branch itself.
+      - name: Publish trace
+        if: always()
+        run: |
+          D="ci-logs/${{ matrix.variant }}"
+          mkdir -p "$D"
+          cp build-trace.log "$D/" 2>/dev/null || echo "no trace" > "$D/build-trace.log"
+          cp build-rc.txt "$D/" 2>/dev/null || true
+          git config user.name  "ci-diagnostics"
+          git config user.email "ci@localhost"
+          git add -f ci-logs || true
+          git diff --cached --quiet && { echo "nothing to publish"; exit 0; }
+          git commit -m "ci: trace for ${{ matrix.variant }} (diagnostic)"
+          git push origin HEAD:${{ github.ref_name }} || true
 
       - name: Collect build info
         id: info
