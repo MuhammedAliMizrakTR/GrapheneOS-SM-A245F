@@ -112,8 +112,8 @@ jobs:
         if: failure()
         run: |
           if [ -f build-trace.log ]; then
-            tail -c 5000 build-trace.log | sed 's/^/TRACE: /'
-            { echo "::error title=Build trace tail::"; tail -c 5000 build-trace.log; } || true
+            MSG=$(tail -c 4000 build-trace.log | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Build trace tail::${MSG}"
           else
             echo "::error title=Build trace::build-trace.log missing"
           fi
