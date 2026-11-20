@@ -166,6 +166,14 @@ fi
 KSU_VERSION_CODE="none"
 KSU_VERSION_TAG="none"
 if [[ -n "${KSU_REPO_DIR}" ]]; then
+    # The version is derived from commit count, so it only equals a published
+    # manager APK if we build a *tagged* ref. A branch such as KernelSU-Next
+    # `dev` sits 199 commits past v3.4.2 (33554 vs the APK's 33355) and could
+    # never be paired. Warn loudly rather than shipping a kernel whose manager
+    # cannot be found.
+    if ! git -C "${KSU_REPO_DIR}" describe --tags --exact-match >/dev/null 2>&1; then
+        log "WARNING: ${KSU_REPO_DIR##*/} is not at a tagged ref; its version code will not match any published APK"
+    fi
     if [[ -f "${KSU_REPO_DIR}/${KSU_VERSION_HEADER}" ]]; then
         KSU_VERSION_CODE="$(grep -oE '#define[[:space:]]+KERNELSU_VERSION_CODE(_BASE)?[[:space:]]+[0-9]+' \
             "${KSU_REPO_DIR}/${KSU_VERSION_HEADER}" | grep -oE '[0-9]+$' | head -1 || true)"

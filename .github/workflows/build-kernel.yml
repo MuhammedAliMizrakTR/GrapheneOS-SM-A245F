@@ -175,27 +175,35 @@ jobs:
       - name: Collect artifacts, preserving the variant in every filename
         run: |
           set -euo pipefail
+          echo "--- raw artifact tree ---"
+          find artifacts -type f | sort || true
+
           mkdir -p release
-          for variant in vanilla kernelsu kernelsu-up; do
-            d="artifacts/kernel-${variant}"
-            if [ ! -d "$d" ]; then
-              echo "::warning::no artifact for ${variant}"
-              continue
-            fi
-            for f in "$d"/*; do
-              [ -f "$f" ] || continue
-              base="$(basename "$f")"
-              case "$base" in
-                *.tar.gz)             cp "$f" "release/$base" ;;
-                boot.img)             cp "$f" "release/boot-${variant}.img" ;;
-                config-*)             cp "$f" "release/config-${variant}" ;;
-                build-info.env)       cp "$f" "release/build-info-${variant}.env" ;;
-                defconfig-report.md)  cp "$f" "release/defconfig-report-${variant}.md" ;;
-                build.log)            cp "$f" "release/build-${variant}.log" ;;
-                *)                    cp "$f" "release/${variant}-${base}" ;;
+          shopt -s globstar nullglob
+          count=0
+          for f in artifacts/**/*; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            # The variant is in the artifact directory (kernel-<variant>) and,
+            # for the tarballs, in the filename itself (a24_<variant>_...).
+            variant=""
+            for v in vanilla kernelsu-up kernelsu; do
+              case "$f" in
+                *"/kernel-$v/"*|*"a24_${v}_"*) variant="$v"; break ;;
               esac
             done
+            case "$base" in
+              *.tar.gz)            cp "$f" "release/$base"; count=$((count+1)) ;;
+              boot.img)            [ -n "$variant" ] && cp "$f" "release/boot-${variant}.img" ;;
+              config-*)            [ -n "$variant" ] && cp "$f" "release/config-${variant}" ;;
+              build-info.env)      [ -n "$variant" ] && cp "$f" "release/build-info-${variant}.env" ;;
+              defconfig-report.md) [ -n "$variant" ] && cp "$f" "release/defconfig-report-${variant}.md" ;;
+              build.log)           [ -n "$variant" ] && cp "$f" "release/build-${variant}.log" ;;
+              *)                   [ -n "$variant" ] && cp "$f" "release/${variant}-${base}" ;;
+            esac
           done
+
+          echo "tarballs collected: $count"
           echo "--- release contents ---"
           ls -la release/
 
