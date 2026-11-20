@@ -18,7 +18,74 @@ tarballs. Verified on run `44754012971` (tag `v1.0.0-vt9`):
 **No GitHub Release has been published.** Publishing is gated behind an
 explicit `publish=true` input; a tag push now only produces artifacts.
 
-## What had to be fixed
+## Release
+
+Published: https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.0-kernel
+
+27 assets: three Odin tarballs, three bare `boot-<variant>.img`, three
+`config-<variant>`, per-variant build logs and `build-info`, the defconfig
+reports, and the version-matched manager APKs.
+
+## What had to be fixed after the first green build
+
+The first green build was **misleading**: it produced kernelsu variants that
+contained no root at all.
+
+### KernelSU was cloned but never wired in
+
+`git clone` into `<kernel>/KernelSU-Next` plus `CONFIG_KSU=y` in the defconfig
+does nothing on its own. Kbuild only descends into directories named in a
+parent Makefile, and an undefined symbol is silently dropped by kconfiglib — so
+the build succeeded with `CONFIG_KSU` absent from `.config` and the image
+rootless while CI stayed green.
+
+Fixed the way upstream `kernel/setup.sh` does it: symlink `drivers/kernelsu`,
+add `obj-y += kernelsu/` to `drivers/Makefile`, and insert
+`source "drivers/kernelsu/Kconfig"` before the final `endmenu` of
+`drivers/Kconfig`. The first attempt at that edit dropped the `endmenu`
+entirely, which unbalances the top-level menu; it now inserts before it.
+
+Note `obj-y`, not `obj-$(CONFIG_KSU)`: with the conditional form Kbuild did not
+descend at all, even though `CONFIG_KSU=y` was verified present in `.config`.
+
+### Nothing verified the result
+
+Step 6b now fails the build unless `CONFIG_KSU=y` is really in `.config`, a
+kernelsu object was produced, and KSU symbols are present in `vmlinux`.
+A silent rootless image can no longer pass. The object check looks for
+`drivers/kernelsu/**/*.o` and `built-in.a` — `= y` code is archived into
+`built-in.a` and never emits a standalone `kernelsu.o`, which only appears for
+`= m`. An earlier version of this check failed a perfectly good build because
+of that.
+
+### Version codes could never match a published APK
+
+KernelSU-Next and KernelSU both derive the version code as
+`30000 + git rev-list --count HEAD`, measured upstream:
+
+| ref | commits | code | published APK |
+|---|---|---|---|
+| KernelSU-Next v3.4.2 | 3355 | **33355** | `KernelSU_Next_v3.4.2_33355` |
+| KernelSU-Next `dev` | 3554 | 33554 | none |
+| KernelSU v3.3.1 | 2680 | **32680** | `KernelSU_v3.3.1_32680` |
+| KernelSU `main` | 2734 | 32734 | none |
+
+Both variants were tracking branches, 199 and 54 commits past the newest tag,
+so neither could be paired. Both are now pinned to tags, and the build warns
+when the checked-out ref is not one. A `--depth=1` clone reports 1 commit,
+hence the version is computed only after `git fetch --unshallow`.
+
+### The publish step silently did nothing
+
+`if: hashFiles('release/*.tar.gz') != ''` never evaluated true — `hashFiles`
+only searches `$GITHUB_WORKSPACE` and is unreliable in a step-level condition —
+so the step was reported *skipped* inside an otherwise-successful job and no
+release existed. Replaced with an explicit check that errors out instead.
+
+Artifact collection also had to become recursive, and it no longer flattens:
+the three `boot.img` files used to overwrite each other.
+
+## What had to be fixed to get the first build
 
 Five separate defects stood between the first CI run and a green build. Each
 one is documented in `docs/BUILD.md` under Troubleshooting.
