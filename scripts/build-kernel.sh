@@ -295,7 +295,12 @@ if [[ -n "${KSU_REPO_DIR}" ]]; then
         die "CONFIG_KSU is not =y in the generated .config (got: $(grep -E '^CONFIG_KSU=' "${OUT}/.config"))"
     fi
 
-    OBJ="$(find "${OUT}" -name 'kernelsu.o' -o -name 'ksu.o' 2>/dev/null | head -1)"
+    # Built-in code is archived into built-in.a and never produces a
+    # standalone kernelsu.o -- that only happens for an =m module. Look for
+    # both, plus any compiled object from the module's own subdirectories.
+    OBJ="$(find "${OUT}/drivers/kernelsu" -name '*.o' 2>/dev/null | head -1)"
+    [[ -n "${OBJ}" ]] || OBJ="$(find "${OUT}" -name 'kernelsu.o' -o -name 'ksu.o' 2>/dev/null | head -1)"
+    [[ -n "${OBJ}" ]] || OBJ="$(find "${OUT}/drivers/kernelsu" -name 'built-in.a' 2>/dev/null | head -1)"
     if [[ -z "${OBJ}" ]]; then
         {
             echo "=== DIAG: KSU wiring ==="
