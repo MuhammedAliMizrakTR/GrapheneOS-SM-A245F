@@ -81,34 +81,59 @@ Unlocking:
 
 Do not proceed if any of that is unacceptable.
 
-### ⚠️ Verified boot — you will almost certainly need the vbmeta image
+### Verified boot — flash `vbmeta` once, then only `boot`
 
 The kernels in this release are **unsigned**. On a device with verified boot
 enforcing, Android Verified Boot rejects them and the bootloader drops back to
 Download Mode. That looks identical to a broken kernel, so do not conclude the
 build is bad when this happens.
 
-Every release therefore also ships a `vbmeta.img` with both
-`disable-verity` and `disable-verification` set (this is `avbtool --flags 2`,
-verified at build time). Flash it **to the `vbmeta` partition** together with
-`boot.img`.
+Every release ships a `vbmeta.img` with both `disable-verity` and
+`disable-verification` set (`avbtool --flags 2`, verified at build time). It
+goes **to the `vbmeta` partition**, which is its own partition — it must not be
+put inside the boot tar.
 
 In Odin:
 - `boot.img` → **AP**
-- `vbmeta.img` → **AP** as well, in a second run, or in the same run if your
-  Odin build accepts multiple AP slots
+- `vbmeta.img` → **AP** as well, in a second run (or the same run if your Odin
+  accepts several AP slots)
 
-Do not put `vbmeta.img` inside the boot tar — it must land on its own
-partition.
+#### It is a once-only step
 
-**This weakens device security permanently for as long as it is flashed.**
-With verification disabled, nothing checks that your boot or system partitions
-are the ones Samsung signed. Flash the stock `vbmeta.img` again — it is inside
-the stock `AP` tar — to undo it.
+`vbmeta` is not rebuilt per kernel and does not need reflashing when you change
+`boot.img`. Once it is on the device, every later kernel test is just
+`boot.img` → AP.
 
-If the device still refuses to boot with vbmeta flashed, the bootloader is
-rejecting the kernel itself, not the signature, and the build needs
-investigation rather than more flashing.
+You can tell from the bootloader log which state you are in. If your log
+contains these lines, the custom vbmeta is already installed and accepted:
+
+```
+SECURE : Signature verification failed (vbmeta)
+CUSTOM vbmeta
+[AVB] avb_ret = 0
+avb_boot_state = 2          (orange)
+avb_device_locked = 0
+```
+
+`Signature verification failed` is expected and is not an error — it is the
+bootloader noticing the vbmeta is not Samsung-signed. `avb_ret = 0` and
+`CUSTOM vbmeta` are it accepting the image anyway. **Do not reflash vbmeta when
+you see this.** Flashing `boot.img` alone is correct, and reflashing vbmeta
+cannot fix anything that is wrong at that point.
+
+Conversely, if the device falls back to Download Mode with
+`avb_device_locked = 1`, or the log has no `CUSTOM vbmeta` line at all, the
+custom vbmeta is not on the device yet and does need flashing once.
+
+**This weakens device security for as long as it is flashed.** With
+verification disabled, nothing checks that your boot or system partitions are
+the ones Samsung signed — which is precisely what makes a custom kernel
+possible. Flash the stock `vbmeta.img` again (it is inside the stock `AP` tar)
+to undo it.
+
+If the device still refuses to boot with the custom vbmeta known to be
+installed, the bootloader is rejecting the kernel itself, not the signature.
+That needs investigation, not more flashing.
 
 ---
 

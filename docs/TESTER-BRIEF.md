@@ -137,14 +137,34 @@ lines. Without it, every round is a guess and we have already spent two.
 
 | File | Purpose |
 |---|---|
-| `boot-kernelsu.img` | kernel + KernelSU-Next — the one to try |
-| `vbmeta-kernelsu.img` | required unless already flashed |
+| `boot-kernelsu.img` | kernel + KernelSU-Next — **this is the only thing to flash** |
+| `vbmeta-kernelsu.img` | **not needed** — you already flashed it |
 
-Both go to the AP slot in Odin. `vbmeta` is its own partition — it does **not**
-go inside the boot tar.
+**Flash `boot` only. Do not reflash vbmeta.**
 
-`a24_kernelsu_A245FXXS9DYG1_*.tar.gz` is the same kernel wrapped for AP.
+Your last log proves the custom vbmeta is already on the device and already
+accepted:
+
+```
+SECURE : Signature verification failed (vbmeta)
+CUSTOM vbmeta
+[AVB] avb_ret = 0
+avb_boot_state = 2        (orange)
+avb_device_locked = 0
+```
+
+`CUSTOM vbmeta` means the bootloader is reading *our* vbmeta, not Samsung's.
+`avb_ret = 0` means it accepted it. `Signature verification failed` is the
+expected consequence of an unsigned vbmeta and is not a failure. Verified boot
+is already off — there is nothing left for a second vbmeta flash to disable.
+
+`boot.img` goes to the AP slot in Odin.
+`a24_kernelsu_A245FXXS9DYG1_*.tar.gz` is the same kernel wrapped for AP;
 `boot-kernelsu.img` is the raw partition image if you prefer to `dd` it.
+
+> Only flash `vbmeta` if the device falls back to Download Mode **and** the log
+> shows `avb_device_locked = 1` or no `CUSTOM vbmeta` line at all. Otherwise it
+> changes nothing.
 
 ## Before you flash
 
