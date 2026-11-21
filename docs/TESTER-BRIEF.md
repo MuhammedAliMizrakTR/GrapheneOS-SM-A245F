@@ -1,6 +1,6 @@
-# Tester brief — v1.0.6-kernel
+# Tester brief — v1.0.7-kernel
 
-**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.6-kernel
+**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.7-kernel
 
 ## Bu turda ne değişti
 
