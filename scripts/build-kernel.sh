@@ -299,6 +299,16 @@ if [[ -f "${OUT}/.config" ]]; then
     if [[ "${uart}" != "CONFIG_SERIAL_8250_MT6577=y" ]]; then
         die "CONFIG_SERIAL_8250_MT6577 is not =y (got: ${uart:-unset}); the UART would be a module and early boot output would be lost"
     fi
+
+    # Same class of bug: SEC_DEBUG is /proc/last_kmsg. Shipped as =m it only
+    # starts once userspace is up, so a kernel that dies earlier leaves no
+    # record at all and the next log is pure bootloader output - which is
+    # exactly what two rounds of tester feedback consisted of.
+    crashlog="$(grep -E '^CONFIG_SEC_DEBUG=' "${OUT}/.config" || true)"
+    log "crash log: ${crashlog:-CONFIG_SEC_DEBUG not present}"
+    if [[ "${crashlog}" != "CONFIG_SEC_DEBUG=y" ]]; then
+        die "CONFIG_SEC_DEBUG is not =y (got: ${crashlog:-unset}); /proc/last_kmsg would not exist and an early crash would leave no trace"
+    fi
 fi
 
 if [[ -f "${OUT}/.config" ]] && grep -q '^CONFIG_MODULES=y' "${OUT}/.config"; then

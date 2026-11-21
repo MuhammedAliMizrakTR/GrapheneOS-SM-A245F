@@ -62,6 +62,27 @@ OVERRIDES = {
     "SERIAL_8250_CONSOLE": ("y", "console support"),
     "SERIAL_EARLYCON": ("y", "early console plumbing"),
 
+    # ---- make the kernel log survive a crash -----------------------------
+    # CONFIG_SEC_DEBUG is the driver behind /proc/last_kmsg: sec_debug_log.c
+    # keeps a copy of the kernel log in the region Samsung reserves for it, so
+    # that the next boot (or recovery) can read what happened. It ships as
+    # =m. A module only loads once userspace is up, which is far too late to
+    # catch a kernel that dies during bring-up: the last_kmsg the tester sent
+    # held nothing but preloader and LK output, because nothing on the kernel
+    # side was ever writing.
+    #
+    # Built in, a crash during early boot leaves the log behind where recovery
+    # can read it. This does not change what the kernel does; it only makes it
+    # possible to find out why it stopped.
+    "SEC_DEBUG": ("y", "provides /proc/last_kmsg; =m cannot capture an early crash"),
+    "SEC_DEBUG_AUTO_COMMENT": ("y", "crash annotations for the last_kmsg record"),
+    "SEC_DEBUG_HISTORY_LOG": ("y", "boot history alongside the crash log"),
+
+    # The MediaTek equivalent. mrdump/ipanic (mboot_params.o) is the other
+    # half of the same story and is also shipped as a module.
+    "MTK_AEE_IPANIC": ("y", "kernel panic recorder, must exist before the crash"),
+    "MTK_AEE_FEATURE": ("y", "required by the panic recorder"),
+
     # The shipped defconfig hardcodes Samsung's build-server path as the KMI
     # whitelist:
     #   CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/.../abi_symbollist.raw"
