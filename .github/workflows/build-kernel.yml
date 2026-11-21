@@ -207,6 +207,8 @@ jobs:
           # Tester-facing helpers: the device check script and the flashing
           # guide belong next to the images, not buried in the repo.
           cp scripts/check_device.py release/check_device.py 2>/dev/null || true
+          cp scripts/analyze_bootlog.py release/analyze_bootlog.py 2>/dev/null || true
+          cp docs/TESTER-FEEDBACK-2.md release/TESTER-FEEDBACK-2.md 2>/dev/null || true
           cp docs/FLASHING.md release/FLASHING.md 2>/dev/null || true
 
           echo "tarballs collected: $count"
