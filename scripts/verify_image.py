@@ -119,10 +119,22 @@ def verify(path):
               % format(opcode, "06b"))
         print("        first instruction - inspect before trusting this image")
 
-    if image_size and image_size > len(img):
-        print("  FAIL: header claims image_size=%d but only %d bytes exist"
-              % (image_size, len(img)))
-        ok = False
+    # image_size is the size of the *decompressed* image in memory, not the
+    # length of the file it arrived in. Comparing it against the compressed
+    # payload is meaningless - a gzip kernel is always smaller than the field.
+    # Only meaningful for a raw Image, where the two should agree.
+    if image_size:
+        if how.startswith("boot.img -> gzip") or how == "gzip":
+            print("  note: image_size is the decompressed size (%.2f MiB);"
+                  " this file is compressed, so no comparison is made"
+                  % (image_size / 1048576))
+        elif image_size > len(img):
+            print("  FAIL: raw image claims image_size=%d but only %d bytes exist"
+                  % (image_size, len(img)))
+            ok = False
+        else:
+            print("  OK: image_size %d fits the %d-byte file"
+                  % (image_size, len(img)))
 
     # Endianness and page size live in flags. Anything unexpected here means
     # the kernel was built for a different configuration than the platform.
