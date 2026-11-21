@@ -388,6 +388,14 @@ if [[ "$(head -c2 "${IMAGEGZ}" | od -An -tx1 | tr -d ' \n')" != "1f8b" ]]; then
 fi
 log "kernel payload is gzip-compressed (verified)"
 
+# Gzip alone is not enough. The bootloader decompresses and then jumps to
+# whatever came out; if that is not a valid arm64 Image it jumps into garbage
+# and the device dies without printing anything - no panic, nothing in
+# last_kmsg. That is the hardest possible failure to diagnose from a tester's
+# phone, and it costs one flash round trip per discovery.
+python3 "${ROOT}/scripts/verify_image.py" "${IMAGEGZ}" \
+    || die "Image.gz is not a valid arm64 Image - do not ship this"
+
 # ---------------------------------------------------------------------------
 # 7. Package
 # ---------------------------------------------------------------------------
