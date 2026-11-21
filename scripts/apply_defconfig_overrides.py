@@ -80,8 +80,17 @@ OVERRIDES = {
 
     # The MediaTek equivalent. mrdump/ipanic (mboot_params.o) is the other
     # half of the same story and is also shipped as a module.
+    #
+    # MTK_AEE_FEATURE is deliberately left at =m. Pulling the whole AEE
+    # subsystem in-tree makes aee_rs.o built-in, and that object needs
+    # aee_get_mode/DAL_Printf/DAL_SetColor from aed-main.c and the DAL it
+    # depends on, which are not built in this configuration:
+    #
+    #   ld.lld: error: undefined symbol: aee_get_mode
+    #   ld.lld: error: undefined symbol: DAL_Printf
+    #
+    # Only the panic recorder is needed here.
     "MTK_AEE_IPANIC": ("y", "kernel panic recorder, must exist before the crash"),
-    "MTK_AEE_FEATURE": ("y", "required by the panic recorder"),
 
     # The shipped defconfig hardcodes Samsung's build-server path as the KMI
     # whitelist:
