@@ -272,7 +272,15 @@ MAKE=(make -C "${KERNEL_SRC}" O="${OUT}" ARCH=arm64
       LOCALVERSION="-a24-${VARIANT}")
 
 log "building (jobs=${JOBS})"
-"${MAKE[@]}" -j"${JOBS}" Image dtbs 2>&1 | tee "${WORK}/build-${VARIANT}.log"
+# Image.gz, not Image. arch/arm64/Makefile sets KBUILD_IMAGE := $(boot)/Image.gz
+# and its all: target is Image.gz, and the MediaTek bootloader gzips-in-place:
+# it calls decompress_kernel() and panics with
+#   gzip header is not correct. Error!
+#   panic (caller ...): decompress kernel image fail!!!
+# if the boot partition holds an uncompressed Image. `make Image` produces no
+# .gz at all, so the packaging step used to fall back to the raw Image and
+# every flash died at ~12 s with HALT reason 9. Reported by the tester.
+"${MAKE[@]}" -j"${JOBS}" Image.gz dtbs 2>&1 | tee "${WORK}/build-${VARIANT}.log"
 
 ln -sfn "${KERNEL_SRC}" "${WORK}/kernel-5.10" 2>/dev/null || true
 
@@ -343,8 +351,17 @@ if [[ -n "${KSU_REPO_DIR}" ]]; then
 fi
 
 IMAGEGZ="${OUT}/arch/arm64/boot/Image.gz"
-[[ -f "${IMAGEGZ}" ]] || IMAGEGZ="${OUT}/arch/arm64/boot/Image"
-[[ -f "${IMAGEGZ}" ]] || die "no kernel image produced"
+[[ -f "${IMAGEGZ}" ]] || die "no Image.gz produced - the a24 bootloader only accepts a gzip-compressed kernel"
+
+# This is the exact failure the tester hit, so prove the payload really is
+# gzip rather than trusting the filename.
+if ! gzip -t "${IMAGEGZ}" 2>/dev/null; then
+    die "${IMAGEGZ} is not valid gzip - refusing to package an unbootable image"
+fi
+if [[ "$(head -c2 "${IMAGEGZ}" | od -An -tx1 | tr -d ' \n')" != "1f8b" ]]; then
+    die "${IMAGEGZ} has no gzip magic (1f 8b)"
+fi
+log "kernel payload is gzip-compressed (verified)"
 
 # ---------------------------------------------------------------------------
 # 7. Package
