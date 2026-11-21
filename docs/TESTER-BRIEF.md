@@ -41,7 +41,7 @@ Bu önemli, çünkü KernelSU kernel kaynağına patch uyguluyor. Eğer vanilla 
 
 ### 1. Ekran fotoğrafı (en önemlisi)
 
-`v1.0.6` ile açılışta:
+`v1.0.7` ile açılışta:
 - **Yazı çıkıyor mu?** Çıkıyorsa **fotoğrafını çekin**. Panik mesajının son 15-20 satırı yeterli.
 - Yoksa yine sadece logo mu? Bunu söyleyin.
 
@@ -99,7 +99,7 @@ Bunlar kontrol edildi, tekrar bakmanıza gerek yok:
 
 Watchdog reseti kernel'in bir süre çalıştığını gösteriyor. Bu turda onu **görebileceğiz**.
 
-Eğer `v1.0.6` de yazı göstermezse, kalan tek yol UART kablosudur ve o zaman bu yaklaşımı bırakıp başka bir yol önereceğim.
+Eğer `v1.0.7` de yazı göstermezse, kalan tek yol UART kablosudur ve o zaman bu yaklaşımı bırakıp başka bir yol önereceğim.
 
 ## Göndermeyin
 
