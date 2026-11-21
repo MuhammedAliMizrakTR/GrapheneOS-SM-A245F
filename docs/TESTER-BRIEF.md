@@ -1,6 +1,6 @@
-# Tester brief — v1.0.4-kernel
+# Tester brief — v1.0.5-kernel
 
-**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.4-kernel
+**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.5-kernel
 
 ## Where we are
 
@@ -69,9 +69,20 @@ first milliseconds, it dies silently — which matches exactly what we see.
 
 It is now built in (`=y`), and the build fails if it ever goes back to `=m`.
 
-This does **not** by itself make the kernel print anything to you, because
-there is still no serial cable attached. What it does is make the console
-*exist*, so the options below can capture it.
+The same mistake was in the thing that records crashes. `/proc/last_kmsg` on
+this phone comes from Samsung's `sec_debug_log.c`, and it too was a module:
+
+```
+CONFIG_SEC_DEBUG=m
+```
+
+A module only loads once Android is up. During bring-up it does not exist, so
+nothing the kernel does gets written down — including a crash. **That is why
+every `last_kmsg` you have sent has contained only bootloader output: there was
+never a kernel side to it.**
+
+It is built in now, along with MediaTek's panic recorder. This is the first
+build that can tell us what actually happens after the bootloader jumps.
 
 ## What I need from you, in order
 
