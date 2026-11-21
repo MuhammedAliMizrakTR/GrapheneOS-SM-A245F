@@ -1,200 +1,108 @@
-# Tester brief — v1.0.5-kernel
+# Tester brief — v1.0.6-kernel
 
-**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.5-kernel
+**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.6-kernel
 
-## Where we are
+## Bu turda ne değişti
 
-Two rounds so far. Round 1 failed because the kernel was packaged
-uncompressed; the bootloader needs gzip. That is fixed and confirmed — round 2
-showed the bootloader decompressing the kernel in 247 ms and jumping to it.
+Şimdiye kadar dört tur log geldi ve **hiçbirinde kernel'den tek satır yoktu**. Sebebi artık belli: bu kernelin **hiç konsolu yoktu**.
 
-Round 2 stopped one step later: **there is no record of what the kernel does.**
-That is not the same as the kernel being dead, and this brief is mostly about
-fixing the blind spot.
+```
+CONFIG_VT                   ayarlı değil
+CONFIG_FRAMEBUFFER_CONSOLE  ayarlı değil
+CONFIG_DRM_FBDEV_EMULATION  ayarlı değil
+```
 
-## The log you sent is the bootloader's, not the kernel's
+`console=tty0` cmdline'da yazıyor ama bağlanacak bir tty yok. UART kablosu da yok. Yani kernel dört turdur **hiçbir yere yazamıyordu** — yazmadığı için değil, yazacak yeri olmadığı için.
 
-`last_kmsg-2.log` contains `mblock_pl_boottag_hook` (preloader) and
-`boot_linux_fdt` (LK). Both are bootloader functions. The file ends at
-`devapc_protection_enable success!` — `devapc` is the bootloader's own
-protection unit, configured immediately before it jumps.
+Bu turda:
 
-So the file covers the bootloader and stops exactly where the kernel starts.
-It cannot tell us anything about the kernel, including whether it ran.
+- `VT`, `VT_CONSOLE`, `DRM_FBDEV_EMULATION`, `DRM_KMS_FB_HELPER` açıldı. MTK DRM sürücüsü zaten `drm_fbdev_generic_setup()` çağırıyor, yani panel üzerinden gerçek bir konsol gelecek.
+- cmdline'a `console=tty0 loglevel=7` eklendi.
+- cmdline'a **`panic=-1`** eklendi: panik olursa kernel **yeniden başlamayacak**, ekranda duracak.
 
-`dmesg.log` ends with `scontext=u:r:recovery` — that is OrangeFox's kernel, not
-ours. `logcat-2.log` is a 30-second stock session for the same reason.
+**Beklenen sonuç:** eğer kernel panikliyorsa, artık bootloop yerine **ekranda yazı göreceksiniz** ve telefon kendini resetlemeyecek. O yazıyı fotoğraflamanız yeterli.
 
-**Three logs, none of them from our kernel.** That is the thing to fix.
+Bu, ilk birkaç yüz komutta ölürse işe yaramaz (display henüz kurulmamış olur). Ama watchdog reseti gördüğümüze göre kernel bir süre çalışıyor, yani display'e ulaşma şansı var.
 
-## Your log also contains five different boots
+## VANILLA'yı da deneyin — hiç denenmedi
 
-Splitting on the preloader's start marker gives five records:
+Dört turdur sadece KernelSU'lu imajlar test edildi. **`boot-vanilla.img` bir kez bile denenmedi.**
 
-| Boot | What ended it |
+Bu önemli, çünkü KernelSU kernel kaynağına patch uyguluyor. Eğer vanilla açılırsa sorun KernelSU'da demektir; eğer o da bootloop yaparsa sorun temel kernelde.
+
+**Lütfen ikisini de deneyin ve hangisinin ne yaptığını ayrı ayrı söyleyin:**
+
+| Dosya | Ne yapıyor |
 |---|---|
-| 1 | secure-boot check, no kernel attempt |
-| 2 | **Download Mode — a button was held** |
-| 3 | secure-boot check, no kernel attempt |
-| 4 | same |
-| 5 | **jumped to the kernel** |
+| `boot-vanilla.img` | KernelSU yok — **önce bunu deneyin** |
+| `boot-kernelsu.img` | KernelSU-Next v3.4.2 |
 
-Boot 2 is worth knowing about but is not a defect:
+## Ne göndereceksiniz
 
-```
-mtk_detect_keypad:240: key 1 is pressed
-AST_DLOAD FROM KEY..
-Entering usb mode for do_download (1)..
-read 'warning_svb.jpg'(511198) completed.
-```
+### 1. Ekran fotoğrafı (en önemlisi)
 
-`AST_DLOAD FROM KEY` means the bootloader saw a key held at power-on and went
-straight to Download Mode. `warning_svb.jpg` is the warning screen it draws.
-Nothing was tested in that boot.
+`v1.0.6` ile açılışta:
+- **Yazı çıkıyor mu?** Çıkıyorsa **fotoğrafını çekin**. Panik mesajının son 15-20 satırı yeterli.
+- Yoksa yine sadece logo mu? Bunu söyleyin.
 
-**Power on with a short press and release, and do not touch any button until
-the logo appears.**
+`panic=-1` yüzünden telefon artık reset atmayacak. Yazı ekranda kalacak.
 
-## What this release changes
+### 2. Boot süresi
 
-The MediaTek UART was being built as a **module**:
+- Logo kaç saniye sonra geliyor?
+- Ne kadar sonra reset atıyor / duruyor?
 
-```
-CONFIG_SERIAL_8250_MT6577=m
-```
+### 3. Kernel logu
 
-A module cannot load before userspace exists. Until it loads there is no
-console, so every early `printk` is thrown away. If the kernel dies in those
-first milliseconds, it dies silently — which matches exactly what we see.
-
-It is now built in (`=y`), and the build fails if it ever goes back to `=m`.
-
-The same mistake was in the thing that records crashes. `/proc/last_kmsg` on
-this phone comes from Samsung's `sec_debug_log.c`, and it too was a module:
-
-```
-CONFIG_SEC_DEBUG=m
-```
-
-A module only loads once Android is up. During bring-up it does not exist, so
-nothing the kernel does gets written down — including a crash. **That is why
-every `last_kmsg` you have sent has contained only bootloader output: there was
-never a kernel side to it.**
-
-It is built in now, along with MediaTek's panic recorder. This is the first
-build that can tell us what actually happens after the bootloader jumps.
-
-## What I need from you, in order
-
-### 1. Time the failure
-
-Power on and watch. Which happens?
-
-- **A** — returns to Download Mode after a few seconds
-- **B** — reboots itself, repeatedly, on its own
-- **C** — stays on the Samsung logo forever
-- **D** — shows the orange unlocked warning, then black, then nothing
-
-These are four different faults. Right now I cannot tell which one is
-happening, which is why the last two rounds have been slow.
-
-Also: did you flash `vbmeta.img` this time? `unlock_count = 4` in the log means
-Odin has been used repeatedly, so I want to confirm what is actually on the
-`boot` partition.
-
-### 2. Get a kernel log
-
-Do these while **in OrangeFox recovery**, not in Android:
+Telefonu **OrangeFox'a** alıp:
 
 ```bash
-adb devices
-adb shell 'cat /proc/last_kmsg' > last_kmsg-after-boot.txt
-adb shell 'ls -l /sys/fs/pstore/' > pstore-list.txt
-adb shell 'cat /sys/fs/pstore/console-ramoops*' > console-ramoops.txt
-adb shell 'cat /proc/last_kmsg' | head -50
+adb shell 'cat /proc/last_kmsg' > last_kmsg-4.txt
+adb shell 'ls -l /sys/fs/pstore/'
 ```
 
-The last one is just to see immediately whether there is anything there.
-
-If `/sys/fs/pstore/` is empty, that is itself the answer: the kernel died
-before pstore could write anything.
-
-Then in the recovery menu: **Advanced → Export logs**. That gets the full
-recovery session.
-
-Run this on whatever you get and paste the summary:
+`last_kmsg-4.txt` bu kez **kernel satırları içermeli**. İçeriyorsa:
 
 ```bash
-python3 analyze_bootlog.py last_kmsg-after-boot.txt
+python3 analyze_bootlog.py last_kmsg-4.txt
 ```
 
-### 3. If you can open the phone
+çıktısını gönderin.
 
-A UART cable on the test points is the only way to see the kernel's first
-lines. Without it, every round is a guess and we have already spent two.
+## Flash
 
-## What to flash
-
-| File | Purpose |
+| Dosya | Odin slotu |
 |---|---|
-| `boot-kernelsu.img` | kernel + KernelSU-Next — **this is the only thing to flash** |
-| `vbmeta-kernelsu.img` | **not needed** — you already flashed it |
+| `boot-vanilla.img` | **AP** — önce bu |
+| `boot-kernelsu.img` | **AP** — sonra bu |
 
-**Flash `boot` only. Do not reflash vbmeta.**
+**`vbmeta` flashlamayın.** Zaten kurulu ve kabul edilmiş durumda. Logunuzda `CUSTOM vbmeta` ve `avb_ret = 0` var, yani doğrulama zaten kapalı.
 
-Your last log proves the custom vbmeta is already on the device and already
-accepted:
+> **Fuse uyarısı.** Bu firmware binary 9 (`A245FXXS9DYG1`). Samsung'un rollback fuse'ı tek yönlüdür. Cihazınız 9'dan yüksek bir binary'deyse bu kernel hiç açılmaz ve bunu geri almanın yolu yoktur.
 
-```
-SECURE : Signature verification failed (vbmeta)
-CUSTOM vbmeta
-[AVB] avb_ret = 0
-avb_boot_state = 2        (orange)
-avb_device_locked = 0
-```
+## Bilinen ve elenen şeyler
 
-`CUSTOM vbmeta` means the bootloader is reading *our* vbmeta, not Samsung's.
-`avb_ret = 0` means it accepted it. `Signature verification failed` is the
-expected consequence of an unsigned vbmeta and is not a failure. Verified boot
-is already off — there is nothing left for a second vbmeta flash to disable.
+Bunlar kontrol edildi, tekrar bakmanıza gerek yok:
 
-`boot.img` goes to the AP slot in Odin.
-`a24_kernelsu_A245FXXS9DYG1_*.tar.gz` is the same kernel wrapped for AP;
-`boot-kernelsu.img` is the raw partition image if you prefer to `dd` it.
+- **Doğrulama reddi (AVB):** hayır. `avb_boot_state = 2`, `avb_device_locked = 0`, cihaz Download Mode'a düşmüyor.
+- **gzip / sıkıştırma:** düzeltildi, kernel 247 ms'de açılıyor.
+- **DTB / overlay:** bootloader kendi FDT'sini kuruyor, sorun değil.
+- **Boot header:** LK'nın bildirdiği adresler header ile birebir uyuşuyor.
+- **MMU / sayfa boyutu:** VA_BITS=39, 4K, PA=48 — platform varsayılanı.
+- **Rollback fuse:** `(1, 9, 9, 9)...ok`.
+- **UART modülü:** düzeltildi (`SERIAL_8250_MT6577=m` → `=y`).
+- **`/proc/last_kmsg`:** düzeltildi (`SEC_DEBUG=m` → `=y`).
 
-> Only flash `vbmeta` if the device falls back to Download Mode **and** the log
-> shows `avb_device_locked = 1` or no `CUSTOM vbmeta` line at all. Otherwise it
-> changes nothing.
+## Açık kalan tek soru
 
-## Before you flash
+**Kernel çalışıyor mu, çalışıyorsa nerede ölüyor?**
 
-```bash
-python3 check_device.py
-```
+Watchdog reseti kernel'in bir süre çalıştığını gösteriyor. Bu turda onu **görebileceğiz**.
 
-Attached to the release. It prints **compatible** or **DO NOT FLASH** with a
-reason.
+Eğer `v1.0.6` de yazı göstermezse, kalan tek yol UART kablosudur ve o zaman bu yaklaşımı bırakıp başka bir yol önereceğim.
 
-> **Fuse warning.** This firmware is binary 9 (`A245FXXS9DYG1`). Samsung's
-> rollback fuse is one-way. If your device is already fused higher than 9, this
-> will not boot no matter what we change, and there is no way to undo a flash
-> that trips the fuse. `check_device.py` checks this. Do not skip it.
+## Göndermeyin
 
-> **This is not GrapheneOS.** It is a custom kernel; the ROM is a separate,
-> later build.
+IMEI, seri numarası, hesap bilgisi. Model ve build string yeterli.
 
-## Sending a report
-
-Useful:
-- which of A/B/C/D you saw, and roughly how long it took
-- model and build string (`A245FXXU9EYK1`, etc.)
-- the output of `analyze_bootlog.py`
-- any log from **after** our kernel was flashed
-
-Not useful:
-- `logcat` from a session that booted stock
-- `dmesg` from recovery
-- screenshots of the logo
-
-**Do not include your IMEI, serial number, or account details.** Model, build
-string and boot logs are what I need.
+Stok kernel ile açılmış `logcat` ve OrangeFox'un kendi `dmesg`'si işe yaramaz — ikisi de bizim kernelimize ait değil.

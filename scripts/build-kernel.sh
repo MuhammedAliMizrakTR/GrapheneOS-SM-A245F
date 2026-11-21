@@ -309,6 +309,18 @@ if [[ -f "${OUT}/.config" ]]; then
     if [[ "${crashlog}" != "CONFIG_SEC_DEBUG=y" ]]; then
         die "CONFIG_SEC_DEBUG is not =y (got: ${crashlog:-unset}); /proc/last_kmsg would not exist and an early crash would leave no trace"
     fi
+
+    # And the console itself. console=tty0 on the cmdline is inert without a
+    # VT and something to hang it off; this device has no UART cable, so the
+    # panel is the only place a panic can be read. Shipped without these, four
+    # rounds of testing produced no kernel output at all.
+    for want in VT DRM_FBDEV_EMULATION; do
+        got="$(grep -E "^CONFIG_${want}=" "${OUT}/.config" || true)"
+        log "console/${want}: ${got:-unset}"
+        if [[ "${got}" != "CONFIG_${want}=y" ]]; then
+            die "CONFIG_${want} is not =y (got: ${got:-unset}); console=tty0 would be inert and a panic would be invisible"
+        fi
+    done
 fi
 
 if [[ -f "${OUT}/.config" ]] && grep -q '^CONFIG_MODULES=y' "${OUT}/.config"; then
