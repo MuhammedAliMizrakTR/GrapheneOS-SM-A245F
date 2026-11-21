@@ -92,6 +92,32 @@ OVERRIDES = {
     # Only the panic recorder is needed here.
     "MTK_AEE_IPANIC": ("y", "kernel panic recorder, must exist before the crash"),
 
+    # ---- give the kernel a console the tester can actually see ------------
+    # The shipped config has no console at all:
+    #
+    #   CONFIG_VT                 unset
+    #   CONFIG_FRAMEBUFFER_CONSOLE unset
+    #   CONFIG_DRM_FBDEV_EMULATION unset
+    #
+    # so bootargs' console=tty0 has nothing to bind to, and with no UART cable
+    # attached there is no way to see a panic. That is why four rounds of
+    # tester logs contained nothing from the kernel: not because it printed
+    # nothing, but because there was nowhere for it to print.
+    #
+    # mtk_drm_drv.c already calls drm_fbdev_generic_setup(drm, 32), so turning
+    # fbdev emulation on gives a real console on the panel once DRM is up.
+    # VT must come with it - fbdev emulation provides the console but VT is
+    # what the kernel console actually hangs off.
+    #
+    # This only helps once the display driver has probed, so it will not catch
+    # a failure in the first few instructions of head.S. It does catch
+    # everything after that, which is where a watchdog reset implies the
+    # kernel is going.
+    "VT": ("y", "console plumbing; without it there is no tty to print to"),
+    "VT_CONSOLE": ("y", "attach the kernel console to the VT"),
+    "DRM_FBDEV_EMULATION": ("y", "MTK DRM already calls drm_fbdev_generic_setup"),
+    "DRM_KMS_FB_HELPER": ("y", "required by fbdev emulation"),
+
     # The shipped defconfig hardcodes Samsung's build-server path as the KMI
     # whitelist:
     #   CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/.../abi_symbollist.raw"

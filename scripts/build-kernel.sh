@@ -466,7 +466,7 @@ python3 "${MKBOOTIMG}" \
     --tags_offset 0x07c88000 \
     --dtb_offset 0x01f00000 \
     --pagesize 4096 \
-    --cmdline "bootopt=64S3,32N2,64N2 loop.max_part=7${EXTRA_CMDLINE}" \
+    --cmdline "bootopt=64S3,32N2,64N2 loop.max_part=7 console=tty0 loglevel=7 panic=-1${EXTRA_CMDLINE}" \
     --output "${BOOTDIR}/boot.img"
 
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
