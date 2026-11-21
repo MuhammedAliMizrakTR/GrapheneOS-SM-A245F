@@ -288,6 +288,19 @@ ln -sfn "${KERNEL_SRC}" "${WORK}/kernel-5.10" 2>/dev/null || true
 
 # Vendor modules: the stock vendor partition expects them under vendor_dlkm,
 # so they are collected separately and are NOT unpacked into boot.img.
+# --- console gate ---------------------------------------------------------
+# The shipped defconfig builds the MediaTek UART as a module. A module cannot
+# be loaded before userspace, so if this silently stays =m every early printk
+# is discarded and a failed boot produces an empty log with no clue in it.
+# That is a 20-minute round trip to discover, so check it here instead.
+if [[ -f "${OUT}/.config" ]]; then
+    uart="$(grep -E '^CONFIG_SERIAL_8250_MT6577=' "${OUT}/.config" || true)"
+    log "console: ${uart:-CONFIG_SERIAL_8250_MT6577 not present}"
+    if [[ "${uart}" != "CONFIG_SERIAL_8250_MT6577=y" ]]; then
+        die "CONFIG_SERIAL_8250_MT6577 is not =y (got: ${uart:-unset}); the UART would be a module and early boot output would be lost"
+    fi
+fi
+
 if [[ -f "${OUT}/.config" ]] && grep -q '^CONFIG_MODULES=y' "${OUT}/.config"; then
     log "building vendor modules"
     "${MAKE[@]}" -j"${JOBS}" modules 2>&1 | tee -a "${WORK}/build-${VARIANT}.log" || \
