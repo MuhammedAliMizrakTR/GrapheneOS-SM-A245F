@@ -116,6 +116,28 @@ the header: the 1024-byte `extra_cmdline` array pushes the v1/v2 fields to the
 end of the 1632-byte v0 struct, and getting that wrong produces an image that
 flashes but has a null `dtb_size`.
 
+### Device panics at ~12 s: `gzip header is not correct`
+
+The MediaTek bootloader decompresses the kernel unconditionally. If the `boot`
+partition holds an uncompressed `Image`, it dies before the kernel starts:
+
+```
+boot_linux_fdt:1028: decompress kernel image...
+gzip header is not correct. Error!
+panic (caller ...): decompress kernel image fail!!!
+HALT: action = 0, reason = 9
+```
+
+`arch/arm64/Makefile` sets `KBUILD_IMAGE := $(boot)/Image.gz`; `make Image`
+produces no `.gz`. The build must target `Image.gz`, and the packaging step
+verifies the `1f 8b` magic before writing the boot image. There is no silent
+fallback to the raw `Image` — that fallback is what shipped an unbootable
+image once.
+
+Note the difference from an AVB rejection: here the preloader never reaches the
+kernel at all (no `Linux version`), whereas an AVB failure happens after the
+kernel has been loaded.
+
 ### `no a24 DTB and no dtbTool available`
 
 `arch/arm64/boot/dts/Makefile` lists one dts dir (`mediatek`) and
