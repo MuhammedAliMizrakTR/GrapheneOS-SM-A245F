@@ -23,12 +23,14 @@ source "${ROOT}/config.env"
 
 VARIANT="vanilla"
 HARDENED="0"
+DEBUG_UART="0"
 JOBS="$(nproc)"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --variant)  VARIANT="$2"; shift 2 ;;
-        --harden)   HARDENED="1"; shift ;;
+        --harden)     HARDENED="1"; shift ;;
+        --debug-uart) DEBUG_UART="1"; shift ;;
         --jobs)     JOBS="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -367,6 +369,22 @@ log "kernel payload is gzip-compressed (verified)"
 # 7. Package
 # ---------------------------------------------------------------------------
 log "packaging"
+
+# The console must not depend on a cable being attached. console=ttyS0 would
+# still be registered even with nothing plugged into the UART pads, and a
+# dormant console on this platform has been known to stall boot. So the UART
+# console is opt-in:
+#
+#     ./scripts/build-kernel.sh --variant vanilla --debug-uart
+#
+# earlycon alone is harmless with no cable: it writes into the UART FIFO and
+# discards, and boots the same either way.
+EXTRA_CMDLINE=""
+if [[ "${DEBUG_UART}" == "1" ]]; then
+    EXTRA_CMDLINE=" earlycon=mtk8250,mmio32,0x11002000 console=ttyS0,921600n8 loglevel=8 ignore_loglevel"
+    log "debug UART console enabled"
+fi
+
 BOOTDIR="${WORK}/boot-${VARIANT}"
 rm -rf "${BOOTDIR}"; mkdir -p "${BOOTDIR}"
 
@@ -417,7 +435,7 @@ python3 "${MKBOOTIMG}" \
     --tags_offset 0x07c88000 \
     --dtb_offset 0x01f00000 \
     --pagesize 4096 \
-    --cmdline "bootopt=64S3,32N2,64N2 loop.max_part=7" \
+    --cmdline "bootopt=64S3,32N2,64N2 loop.max_part=7${EXTRA_CMDLINE}" \
     --output "${BOOTDIR}/boot.img"
 
 STAMP="$(date -u +%Y%m%d-%H%M%S)"

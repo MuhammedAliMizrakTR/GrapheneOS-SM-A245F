@@ -49,6 +49,19 @@ OVERRIDES = {
     # and still worth reading; they just should not end the build.
     "WERROR": ("n", "vendor MTK code is not warning-clean with this clang"),
 
+    # ---- make the serial console usable -----------------------------------
+    # The shipped defconfig builds the MediaTek UART driver as a module
+    # (SERIAL_8250_MT6577=m). A module cannot be loaded before userspace, so
+    # the console the cmdline asks for does not exist during early boot:
+    # every printk before the module loads goes nowhere, which is exactly the
+    # "kernel entered but printed nothing" case the tester hit. Built in, the
+    # driver registers its OF earlycon (8250_mtk.c, OF_EARLYCON_DECLARE(
+    # mtk8250, "mediatek,mt6577-uart", ...)) and start_kernel() output becomes
+    # visible.
+    "SERIAL_8250_MT6577": ("y", "UART must be built in or early boot output is lost"),
+    "SERIAL_8250_CONSOLE": ("y", "console support"),
+    "SERIAL_EARLYCON": ("y", "early console plumbing"),
+
     # The shipped defconfig hardcodes Samsung's build-server path as the KMI
     # whitelist:
     #   CONFIG_UNUSED_KSYMS_WHITELIST="/home/dpi/qb5_8814/.../abi_symbollist.raw"
