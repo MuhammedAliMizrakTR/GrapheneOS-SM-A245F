@@ -273,15 +273,18 @@ export CLANG_TRIPLE="aarch64-linux-gnu-"
 # 46.29 MiB release and there was no way to tell from the log which build had
 # actually been flashed. With it, `uname -r` answers the question, and so does
 # any log line that prints the version.
+# utsrelease.h caps the whole version string at 64 characters, and KernelSU
+# appends its own "-g<sha>" and can add "-dirty".  A stamp of yymmddHHMM is
+# enough to separate two builds of the same day and leaves room for both.
 GIT_REV="${GIT_REV:-$(git -C "${ROOT}" rev-parse --short=8 HEAD 2>/dev/null || echo unknown)}"
-BUILD_STAMP="${BUILD_STAMP:-$(date -u +%Y%m%d%H%M)}"
-log "build id: ${GIT_REV}-${BUILD_STAMP}"
+BUILD_STAMP="${BUILD_STAMP:-$(date -u +%y%m%d%H%M)}"
+log "build id: ${GIT_REV} built ${BUILD_STAMP}"
 
 MAKE=(make -C "${KERNEL_SRC}" O="${OUT}" ARCH=arm64
       LLVM=1 LLVM_IAS=1
       CROSS_COMPILE="${CROSS_COMPILE}"
       KCFLAGS="-Wno-error"
-      LOCALVERSION="-a24-${VARIANT}-g${GIT_REV}-${BUILD_STAMP}")
+      LOCALVERSION="-a24-${VARIANT:0:6}-${BUILD_STAMP:2:10}")
 
 log "building (jobs=${JOBS})"
 # Image.gz, not Image. arch/arm64/Makefile sets KBUILD_IMAGE := $(boot)/Image.gz
