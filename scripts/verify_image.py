@@ -136,6 +136,15 @@ def verify(path):
             print("  OK: image_size %d fits the %d-byte file"
                   % (image_size, len(img)))
 
+    # The version string is worth surfacing: it is the only thing that tells
+    # two builds apart once they are on a device and the filename is gone.
+    import re as _re
+    m = _re.search(rb"Linux version ([0-9][^ \x00]{0,60})", img)
+    if m:
+        print("  version     : %s" % m.group(1).decode("ascii", "replace"))
+    else:
+        print("  version     : not found in payload")
+
     # Endianness and page size live in flags. Anything unexpected here means
     # the kernel was built for a different configuration than the platform.
     if flags:
