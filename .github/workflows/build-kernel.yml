@@ -343,7 +343,36 @@ jobs:
           fi
           echo "attaching ${#TARS[@]} odin payload(s): ${TARS[*]}"
 
+          # Put the identity of the build in the release notes. Asset downloads
+          # have been unreliable and the notes are the one thing that is always
+          # readable, so the source tree, its version, the config profile and
+          # the exact LOCALVERSION go here rather than only into a file.
+          {
+            cat docs/RELEASE_NOTES.md
+            echo
+            echo "## This build"
+            echo
+            echo '| | |'
+            echo '|---|---|'
+            for v in vanilla kernelsu kernelsu-up; do
+              f="release/build-info-${v}.env"
+              [ -f "$f" ] || continue
+              kv=$(grep '^KERNEL_VERSION=' "$f" | cut -d= -f2-)
+              kr=$(grep '^KERNEL_REPO=' "$f" | cut -d= -f2-)
+              kb=$(grep '^KERNEL_BRANCH=' "$f" | cut -d= -f2-)
+              cp=$(grep '^CONFIG_PROFILE=' "$f" | cut -d= -f2-)
+              lv=$(grep '^LOCALVERSION=' "$f" | cut -d= -f2-)
+              echo "| \`${v}\` kernel | ${kv} |"
+              echo "| source | ${kr} @ \`${kb}\` |"
+              echo "| config profile | ${cp} |"
+              echo "| LOCALVERSION | \`${lv}\` |"
+              break
+            done
+            echo
+            echo "The same values are in \`build-info-<variant>.env\` and"
+            echo "\`defconfig-report-<variant>.md\`."
+          } > /tmp/notes.md
           gh release create "$TAG" release/* \
             --title "Kernel build ${TAG}" \
-            --notes-file docs/RELEASE_NOTES.md \
+            --notes-file /tmp/notes.md \
             --prerelease

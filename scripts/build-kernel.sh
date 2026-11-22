@@ -292,11 +292,20 @@ GIT_REV="${GIT_REV:-$(git -C "${ROOT}" rev-parse --short=8 HEAD 2>/dev/null || e
 BUILD_STAMP="${BUILD_STAMP:-$(date -u +%y%m%d%H%M)}"
 log "build id: ${GIT_REV} built ${BUILD_STAMP}"
 
+if [[ "${HARDENED}" == "1" ]]; then
+    PROFILE_NAME="HARDENED"
+elif [[ "${KEEP_SECURITY}" == "1" ]]; then
+    PROFILE_NAME="KEEP-SECURITY"
+else
+    PROFILE_NAME="STANDARD"
+fi
+LOCALVERSION_USED="-a24-${VARIANT:0:6}-${BUILD_STAMP:2:10}"
+
 MAKE=(make -C "${KERNEL_SRC}" O="${OUT}" ARCH=arm64
       LLVM=1 LLVM_IAS=1
       CROSS_COMPILE="${CROSS_COMPILE}"
       KCFLAGS="-Wno-error"
-      LOCALVERSION="-a24-${VARIANT:0:6}-${BUILD_STAMP:2:10}")
+      LOCALVERSION="${LOCALVERSION_USED}")
 
 log "building (jobs=${JOBS})"
 # Image.gz, not Image. arch/arm64/Makefile sets KBUILD_IMAGE := $(boot)/Image.gz
@@ -559,6 +568,10 @@ fi
     echo "VARIANT=${VARIANT}"
     echo "NAME=${NAME}"
     echo "KERNEL_VERSION=${ACTUAL_VER:-unknown}"
+    echo "KERNEL_REPO=${KERNEL_REPO}"
+    echo "KERNEL_BRANCH=${KERNEL_BRANCH}"
+    echo "CONFIG_PROFILE=${PROFILE_NAME}"
+    echo "LOCALVERSION=${LOCALVERSION_USED}"
     echo "BASE_FIRMWARE=${BASE_FIRMWARE}"
     echo "KERNELSU_VERSION_CODE=${KSU_VERSION_CODE:-none}"
 } > "${DEST}/build-info.env"
