@@ -164,7 +164,21 @@ jobs:
       - name: Verify the boot images carry a real initramfs
         if: success()
         run: |
-          python3 scripts/check_built_boot.py dist/a24_*/boot.img
+          echo "dist/ contents:"
+          ls -la dist/ || echo "(no dist directory)"
+          shopt -s nullglob
+          IMAGES=(dist/a24_*/boot.img)
+          if [ ${#IMAGES[@]} -eq 0 ]; then
+            echo "::error title=No boot.img to verify::the build reported success but produced no dist/a24_*/boot.img"
+            exit 1
+          fi
+          python3 scripts/check_built_boot.py "${IMAGES[@]}" 2>&1 | tee verify.log
+          RC=${PIPESTATUS[0]}
+          if [ "$RC" -ne 0 ]; then
+            MSG=$(tail -c 2500 verify.log | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Boot image would not boot::${MSG}"
+          fi
+          exit "$RC"
 
       # The Actions job log is served from blob storage that some networks
       # cannot reach, so on failure the tail of the trace is attached as a
@@ -172,6 +186,11 @@ jobs:
       - name: Report failure inline
         if: failure()
         run: |
+          echo "=== dist tree ==="
+          ls -la dist/ 2>/dev/null || echo "(dist missing)"
+          find dist -name 'boot.img' 2>/dev/null || true
+          echo "=== verify log ==="
+          cat verify.log 2>/dev/null || echo "(no verify.log)"
           if [ -f build-trace.log ]; then
             MSG=$(tail -c 4000 build-trace.log | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::error title=Build trace tail::${MSG}"
