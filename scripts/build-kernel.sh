@@ -23,6 +23,7 @@ source "${ROOT}/config.env"
 
 VARIANT="vanilla"
 HARDENED="0"
+KEEP_SECURITY="0"
 DEBUG_UART="0"
 JOBS="$(nproc)"
 
@@ -30,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --variant)  VARIANT="$2"; shift 2 ;;
         --harden)     HARDENED="1"; shift ;;
+        --keep-security) KEEP_SECURITY="1"; shift ;;
         --debug-uart) DEBUG_UART="1"; shift ;;
         --jobs)     JOBS="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -58,7 +60,13 @@ if [[ ! -d "${KSRC}/.git" ]]; then
     git clone --depth=1 --single-branch --branch "${KERNEL_BRANCH}" \
         "${KERNEL_REPO}" "${KSRC}"
 fi
-KERNEL_SRC="${KSRC}/${KERNEL_DIR}"
+# KERNEL_DIR may be empty: the VH-Devices tree keeps the kernel at the repo
+# root instead of under kernel-5.10/ like the Samsung a245f drop does.
+if [[ -n "${KERNEL_DIR}" ]]; then
+    KERNEL_SRC="${KSRC}/${KERNEL_DIR}"
+else
+    KERNEL_SRC="${KSRC}"
+fi
 [[ -f "${KERNEL_SRC}/Makefile" ]] || die "kernel Makefile not found in ${KERNEL_SRC}"
 
 ACTUAL_VER="$(make -s -C "${KERNEL_SRC}" kernelversion 2>/dev/null || true)"
@@ -203,6 +211,10 @@ DEFCONFIG_SRC="${KERNEL_SRC}/arch/arm64/configs/${KERNEL_DEFCONFIG}"
 DEFCONFIG_TMP="${WORK}/defconfig.${VARIANT}"
 HARDEN_ARG=""
 [[ "${HARDENED}" == "1" ]] && HARDEN_ARG="--harden"
+# KEEP_SECURITY is the default for the VH-Devices tree, whose own defconfig
+# already has RKP/KDP/DEFEX/FIVE/PROCA enabled and which is the configuration
+# closest to the one OrangeFox actually boots on this hardware.
+[[ "${KEEP_SECURITY}" == "1" ]] && HARDEN_ARG="${HARDEN_ARG} --keep-security"
 
 python3 "${ROOT}/scripts/apply_defconfig_overrides.py" \
     --in "${DEFCONFIG_SRC}" \

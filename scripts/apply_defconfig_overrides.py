@@ -198,15 +198,28 @@ def main():
     ap.add_argument("--out", dest="dst", required=True)
     ap.add_argument("--harden", action="store_true",
                     help="stop after build-feasibility changes; keep Samsung security features")
+    ap.add_argument("--keep-security", action="store_true",
+                    help="leave Samsung's RKP/KDP/DEFEX/FIVE/PROCA enabled "
+                         "(correct for a tree whose own defconfig ships them on)")
     ap.add_argument("--report", help="write a summary of applied changes here")
     args = ap.parse_args()
 
     with open(args.src) as f:
         text = f.read()
 
+    SECURITY = ("RKP", "KDP", "KDP_CRED", "KDP_NS", "SECURITY_DEFEX",
+                "SECURITY_DEFEX_USER", "FIVE", "FIVE_GKI_10", "PROCA",
+                "PROCA_S_OS", "GAF")
+    BUILD_ONLY = ("LTO_CLANG_FULL", "LTO_CLANG_THIN", "LTO_CLANG", "DEBUG_INFO")
+
     if args.harden:
-        applied = {k: v for k, v in OVERRIDES.items() if k in
-                   ("LTO_CLANG_FULL", "LTO_CLANG_THIN", "LTO_CLANG", "DEBUG_INFO")}
+        applied = {k: v for k, v in OVERRIDES.items() if k in BUILD_ONLY}
+    elif getattr(args, "keep_security", False):
+        # Used with a tree whose own defconfig already ships the Samsung
+        # security drivers enabled (VH-Devices OSRC does). Turning them off
+        # there is a change to a configuration that is known to boot, and the
+        # change has never been shown to help.
+        applied = {k: v for k, v in OVERRIDES.items() if k not in SECURITY}
     else:
         applied = OVERRIDES
 
@@ -218,7 +231,13 @@ def main():
     report = ["# defconfig override report", ""]
     report.append("source : %s" % args.src)
     report.append("output : %s" % args.dst)
-    report.append("mode   : %s" % ("HARDENED" if args.harden else "STANDARD"))
+    if args.harden:
+        mode = "HARDENED"
+    elif getattr(args, "keep_security", False):
+        mode = "KEEP-SECURITY"
+    else:
+        mode = "STANDARD"
+    report.append("mode   : %s" % mode)
     report.append("")
     report.append("| config | value | reason |")
     report.append("|---|---|---|")

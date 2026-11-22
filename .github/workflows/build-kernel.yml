@@ -25,6 +25,11 @@ on:
         required: true
         default: false
         type: boolean
+      keep_security:
+        description: "Leave the tree's own RKP/KDP/DEFEX/FIVE/PROCA settings alone. Correct for the VH-Devices tree, which ships them enabled."
+        required: true
+        default: true
+        type: boolean
       publish:
         description: 'Publish a GitHub Release'
         required: true
@@ -104,6 +109,9 @@ jobs:
           FLAGS="--variant ${{ matrix.variant }} --jobs $(nproc)"
           if [ "${{ github.event.inputs.hardened }}" = "true" ]; then
             FLAGS="$FLAGS --harden"
+          fi
+          if [ "${{ github.event.inputs.keep_security }}" = "true" ]; then
+            FLAGS="$FLAGS --keep-security"
           fi
           set +e
           ./scripts/build-kernel.sh $FLAGS 2>&1 | tee build-trace.log
