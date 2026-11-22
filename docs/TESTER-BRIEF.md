@@ -1,73 +1,76 @@
-# Tester brief — v1.0.7-kernel
+# Tester brief — v1.0.8-kernel
 
-**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.7-kernel
+**Release:** https://github.com/MuhammedAliMizrakTR/GrapheneOS-SM-A245F/releases/tag/v1.0.8-kernel
 
-## Bu turda ne değişti
+## Önce: hangi sürümün flashlandığını artık bilebileceğiz
 
-Şimdiye kadar dört tur log geldi ve **hiçbirinde kernel'den tek satır yoktu**. Sebebi artık belli: bu kernelin **hiç konsolu yoktu**.
+Round 4 logunda bootloader şunu söylüyordu:
 
 ```
-CONFIG_VT                   ayarlı değil
-CONFIG_FRAMEBUFFER_CONSOLE  ayarlı değil
-CONFIG_DRM_FBDEV_EMULATION  ayarlı değil
+kernel_sz=0x013c9a54   = 19.79 MiB
 ```
 
-`console=tty0` cmdline'da yazıyor ama bağlanacak bir tty yok. UART kablosu da yok. Yani kernel dört turdur **hiçbir yere yazamıyordu** — yazmadığı için değil, yazacak yeri olmadığı için.
+Ama `v1.0.7`'nin `Image.gz`'si **46.29 MiB**. İkisi de bizim imajımız (ramdisk 26 bayt, stok 37.9 MiB) — ama **cihaz en son sürümü çalıştırmıyor.** Ve logda hangi sürümün çalıştığını söyleyen hiçbir şey yoktu. Bu yüzden bütün tur okunamaz hale geldi.
 
-Bu turda:
+**Artık kernel kendini tanıtıyor.** Sürüm stringi şöyle:
 
-- `VT`, `VT_CONSOLE`, `DRM_FBDEV_EMULATION`, `DRM_KMS_FB_HELPER` açıldı. MTK DRM sürücüsü zaten `drm_fbdev_generic_setup()` çağırıyor, yani panel üzerinden gerçek bir konsol gelecek.
-- cmdline'a `console=tty0 loglevel=7` eklendi.
-- cmdline'a **`panic=-1`** eklendi: panik olursa kernel **yeniden başlamayacak**, ekranda duracak.
+```
+5.10.226-a24-vanill-2611221025
+                └─┬───┘ └───┬───┘
+                  │         └─ build zamanı (yy ayddHHMM)
+                  └─ variant
+```
 
-**Beklenen sonuç:** eğer kernel panikliyorsa, artık bootloop yerine **ekranda yazı göreceksiniz** ve telefon kendini resetlemeyecek. O yazıyı fotoğraflamanız yeterli.
+Yani `uname -r` ya da logdaki herhangi bir sürüm satırı, cihazdaki build'i kesin söyler.
 
-Bu, ilk birkaç yüz komutta ölürse işe yaramaz (display henüz kurulmamış olur). Ama watchdog reseti gördüğümüze göre kernel bir süre çalışıyor, yani display'e ulaşma şansı var.
+## Bu turda ne yapmanız gerekiyor
 
-## VANILLA'yı da deneyin — hiç denenmedi
+### 1. Flash ettikten sonra sürümü okuyun
 
-Dört turdur sadece KernelSU'lu imajlar test edildi. **`boot-vanilla.img` bir kez bile denenmedi.**
-
-Bu önemli, çünkü KernelSU kernel kaynağına patch uyguluyor. Eğer vanilla açılırsa sorun KernelSU'da demektir; eğer o da bootloop yaparsa sorun temel kernelde.
-
-**Lütfen ikisini de deneyin ve hangisinin ne yaptığını ayrı ayrı söyleyin:**
-
-| Dosya | Ne yapıyor |
-|---|---|
-| `boot-vanilla.img` | KernelSU yok — **önce bunu deneyin** |
-| `boot-kernelsu.img` | KernelSU-Next v3.4.2 |
-
-## Ne göndereceksiniz
-
-### 1. Ekran fotoğrafı (en önemlisi)
-
-`v1.0.7` ile açılışta:
-- **Yazı çıkıyor mu?** Çıkıyorsa **fotoğrafını çekin**. Panik mesajının son 15-20 satırı yeterli.
-- Yoksa yine sadece logo mu? Bunu söyleyin.
-
-`panic=-1` yüzünden telefon artık reset atmayacak. Yazı ekranda kalacak.
-
-### 2. Boot süresi
-
-- Logo kaç saniye sonra geliyor?
-- Ne kadar sonra reset atıyor / duruyor?
-
-### 3. Kernel logu
-
-Telefonu **OrangeFox'a** alıp:
+OrangeFox'ta:
 
 ```bash
-adb shell 'cat /proc/last_kmsg' > last_kmsg-4.txt
-adb shell 'ls -l /sys/fs/pstore/'
+adb shell 'uname -r'
 ```
 
-`last_kmsg-4.txt` bu kez **kernel satırları içermeli**. İçeriyorsa:
+Çıktıyı bana gönderin. **Bu tek satır, son dört turun neden ilerlemediğini çözecek.**
+
+Beklenen biçim: `5.10.226-a24-...-...`
+
+Eğer `5.10.177-android12-9-27760517` görürseniz, o OrangeFox'un kendi kernel'i — yani cihaz hâlâ recovery'de, bizim imajımız hiç çalışmamış.
+
+### 2. VANILLA ile başlayın
+
+`boot-vanilla.img` **dört turdur hiç denenmedi.** KernelSU'lu imajlar hep denendi. Bu boşluk kapatılmalı.
+
+| Sıra | Dosya | Neden |
+|---|---|---|
+| 1 | `boot-vanilla.img` | KernelSU yok — temel kernel çalışıyor mu? |
+| 2 | `boot-kernelsu.img` | KernelSU-Next v3.4.2 |
+
+**İkisini ayrı ayrı deneyin ve hangisinin ne yaptığını ayrı söyleyin.**
+
+### 3. Ekranı izleyin
+
+`panic=-1` sayesinde telefon artık panik olunca reset atmamalı. Yani:
+
+- **Yazı çıkıyorsa** → fotoğraf (son 15-20 satır yeterli)
+- **Sadece logo + tekrar reset** → bunu söyleyin
+- **Logo hiç gelmiyor** → bunu söyleyin
+
+### 4. `last_kmsg` yine de alın
+
+Telefonu OrangeFox'a alıp:
 
 ```bash
-python3 analyze_bootlog.py last_kmsg-4.txt
+adb shell 'cat /proc/last_kmsg' > last_kmsg-5.txt
 ```
 
-çıktısını gönderin.
+Ve üstünde:
+
+```bash
+python3 analyze_bootlog.py last_kmsg-5.txt
+```
 
 ## Flash
 
@@ -76,33 +79,38 @@ python3 analyze_bootlog.py last_kmsg-4.txt
 | `boot-vanilla.img` | **AP** — önce bu |
 | `boot-kernelsu.img` | **AP** — sonra bu |
 
-**`vbmeta` flashlamayın.** Zaten kurulu ve kabul edilmiş durumda. Logunuzda `CUSTOM vbmeta` ve `avb_ret = 0` var, yani doğrulama zaten kapalı.
+**`vbmeta` flashlamayın.** Zaten kurulu ve kabul edilmiş (`CUSTOM vbmeta`, `avb_ret = 0`).
 
-> **Fuse uyarısı.** Bu firmware binary 9 (`A245FXXS9DYG1`). Samsung'un rollback fuse'ı tek yönlüdür. Cihazınız 9'dan yüksek bir binary'deyse bu kernel hiç açılmaz ve bunu geri almanın yolu yoktur.
+> **Fuse uyarısı.** Binary 9 (`A245FXXS9DYG1`). Samsung rollback fuse'ı tek yönlü. Cihaz 9'dan yüksekse bu kernel açılmaz ve geri dönüşü yoktur.
 
-## Bilinen ve elenen şeyler
+## Download Mode notu
 
-Bunlar kontrol edildi, tekrar bakmanıza gerek yok:
+Geçen turda söylediğiniz gibi, loglardaki Download Mode boot'ları sizin recovery geçişinizmiş. Anlaşıldı — artık o boot'ları "arıza" saymıyorum, sadece atlanacak veri. Bunun için ayrı bir şey yapmanıza gerek yok.
 
-- **Doğrulama reddi (AVB):** hayır. `avb_boot_state = 2`, `avb_device_locked = 0`, cihaz Download Mode'a düşmüyor.
-- **gzip / sıkıştırma:** düzeltildi, kernel 247 ms'de açılıyor.
-- **DTB / overlay:** bootloader kendi FDT'sini kuruyor, sorun değil.
-- **Boot header:** LK'nın bildirdiği adresler header ile birebir uyuşuyor.
-- **MMU / sayfa boyutu:** VA_BITS=39, 4K, PA=48 — platform varsayılanı.
-- **Rollback fuse:** `(1, 9, 9, 9)...ok`.
-- **UART modülü:** düzeltildi (`SERIAL_8250_MT6577=m` → `=y`).
-- **`/proc/last_kmsg`:** düzeltildi (`SEC_DEBUG=m` → `=y`).
+## Elenen ihtimaller
 
-## Açık kalan tek soru
+Bunlar kontrol edildi ve **çürütüldü**, tekrar bakmayın:
+
+| Hipotez | Sonuç |
+|---|---|
+| AVB reddi | Hayır — `avb_boot_state = 2`, `avb_device_locked = 0` |
+| gzip / sıkıştırma | Düzeltildi, 247 ms'de açılıyor |
+| DTB / overlay | LK kendi FDT'sini kuruyor |
+| Boot header adresleri | LK'nın bildirdiği ile birebir aynı |
+| MMU / sayfa boyutu | VA_BITS=39, 4K, PA=48 — stok değerler |
+| Rollback fuse | `(1, 9, 9, 9)...ok` |
+| RKP el sıkışması | Logda RKP el sıkışması yok, o satırlar `rkpdapp` (Android) |
+| `secdbg-kernel-log` DT node yok | **Yanlış** — `mt6789.dts:7357` include ediyor |
+| Kernel partition'a sığmıyor | **Yanlış** — 46.59 MiB / 80 MiB |
+
+## Açık kalan soru
 
 **Kernel çalışıyor mu, çalışıyorsa nerede ölüyor?**
 
-Watchdog reseti kernel'in bir süre çalıştığını gösteriyor. Bu turda onu **görebileceğiz**.
-
-Eğer `v1.0.7` de yazı göstermezse, kalan tek yol UART kablosudur ve o zaman bu yaklaşımı bırakıp başka bir yol önereceğim.
+Dört turdur cevap yok. Sıradaki adım, çalıştığı **kanıtlanmış** stok kernel'i çıkarıp bizimkiyle karşılaştırmak — tahmin etmek yerine ölçmek. Detay: `docs/STOCK-COMPARISON.md`.
 
 ## Göndermeyin
 
-IMEI, seri numarası, hesap bilgisi. Model ve build string yeterli.
+IMEI, seri numarası, hesap bilgisi.
 
-Stok kernel ile açılmış `logcat` ve OrangeFox'un kendi `dmesg`'si işe yaramaz — ikisi de bizim kernelimize ait değil.
+`logcat` ve OrangeFox `dmesg`'i işe yaramaz — ikisi de bizim kernelimize ait değil. Bunu üç turdur görüyoruz.
