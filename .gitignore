@@ -26,3 +26,10 @@ __pycache__/
 .DS_Store
 *~
 stock/
+
+# The stock initramfs is a deliberate exception to *.img: it is the /init the
+# kernel needs, it comes from a firmware download that is not in the repo, and
+# rebuilding it is not possible without redoing the Colab extraction. 27 MB,
+# checked in on purpose.
+!stock_ramdisk/
+!stock_ramdisk/a24_dyg1_ramdisk.img
