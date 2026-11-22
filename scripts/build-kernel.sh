@@ -26,6 +26,7 @@ HARDENED="0"
 KEEP_SECURITY="0"
 DEBUG_UART="0"
 STOCK_BOOT_IMG=""
+STOCK_RAMDISK=""
 JOBS="$(nproc)"
 
 while [[ $# -gt 0 ]]; do
@@ -35,6 +36,7 @@ while [[ $# -gt 0 ]]; do
         --keep-security) KEEP_SECURITY="1"; shift ;;
         --debug-uart) DEBUG_UART="1"; shift ;;
         --stock-boot) STOCK_BOOT_IMG="$2"; shift 2 ;;
+        --stock-ramdisk) STOCK_RAMDISK="$2"; shift 2 ;;
         --jobs)     JOBS="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -509,7 +511,17 @@ MKBOOTIMG="${ROOT}/scripts/third_party/mkbootimg/mkbootimg.py"
 # image, but that image can only ever reach the same dead end, so say so
 # loudly.
 RAMDISK="${BOOTDIR}/ramdisk.gz"
-if [[ -n "${STOCK_BOOT_IMG}" ]]; then
+if [[ -n "${STOCK_RAMDISK}" ]]; then
+    # A ramdisk on its own is the easier thing to carry around: the stock
+    # recovery.img for this firmware is 80 MiB and has to be lz4-decoded
+    # before the ramdisk can be read out of it.
+    [[ -f "${STOCK_RAMDISK}" ]] || die "STOCK_RAMDISK=${STOCK_RAMDISK} does not exist"
+    log "using the stock ramdisk file ${STOCK_RAMDISK}"
+    cp "${STOCK_RAMDISK}" "${RAMDISK}"
+    RAMDISK_SIZE="$(stat -c %s "${RAMDISK}")"
+    [[ "${RAMDISK_SIZE}" -gt 1000000 ]] || \
+        die "ramdisk is only ${RAMDISK_SIZE} bytes - that is not a real initramfs"
+elif [[ -n "${STOCK_BOOT_IMG}" ]]; then
     [[ -f "${STOCK_BOOT_IMG}" ]] || die "STOCK_BOOT_IMG=${STOCK_BOOT_IMG} does not exist"
     log "using the stock ramdisk from ${STOCK_BOOT_IMG}"
     python3 "${ROOT}/scripts/extract_ramdisk.py" \
@@ -522,7 +534,8 @@ else
     gzip -c "${BOOTDIR}/empty" > "${RAMDISK}"
     log "WARNING: no STOCK_BOOT_IMG given - packaging an EMPTY ramdisk."
     log "WARNING: the kernel will find no /init and no root=, and will die"
-    log "WARNING: after ~20 s waiting for a root device. Set STOCK_BOOT_IMG."
+    log "WARNING: after ~20 s waiting for a root device."
+    log "WARNING: set --stock-ramdisk (or --stock-boot) to fix this."
 fi
 
 # Offsets are the published a24 values: base 0x3fff8000, kernel +0x8000,
@@ -600,6 +613,8 @@ fi
     echo "LOCALVERSION=${LOCALVERSION_USED}"
     echo "BASE_FIRMWARE=${BASE_FIRMWARE}"
     echo "KERNELSU_VERSION_CODE=${KSU_VERSION_CODE:-none}"
+    echo "RAMDISK_BYTES=${RAMDISK_SIZE:-0}"
+    echo "RAMDISK_SOURCE=${STOCK_RAMDISK:-${STOCK_BOOT_IMG:-EMPTY-PLACEHOLDER}}" 
 } > "${DEST}/build-info.env"
 
 log "done -> ${DEST}"

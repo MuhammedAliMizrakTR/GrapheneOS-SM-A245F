@@ -30,6 +30,11 @@ on:
         required: false
         default: ''
         type: string
+      stock_ramdisk:
+        description: 'Optional: ramdisk file to embed. Blank uses the checked-in stock_ramdisk/a24_dyg1_ramdisk.img, which is the real initramfs from A245FXXS9DYG1 recovery.img.'
+        required: false
+        default: ''
+        type: string
       keep_security:
         description: "Leave the tree's own RKP/KDP/DEFEX/FIVE/PROCA settings alone. Correct for the VH-Devices tree, which ships them enabled."
         required: true
@@ -121,6 +126,19 @@ jobs:
           if [ -n "${{ github.event.inputs.stock_boot }}" ]; then
             FLAGS="$FLAGS --stock-boot ${{ github.event.inputs.stock_boot }}"
           fi
+          # The real ramdisk for this device is not in boot.img: its boot
+          # image is a v4/GKI stub with a 1.9 MiB first-stage ramdisk, and
+          # vendor_boot fails signature verification, so LK never loads a
+          # ramdisk from it. The 26 MiB initramfs lives in recovery.img, and
+          # recovery.img's layout matches the image we build (page 4096,
+          # kernel 0x40000000, ramdisk 0x66f00000, tags 0x47c80000).
+          RD="${{ github.event.inputs.stock_ramdisk }}"
+          if [ -z "$RD" ] && [ -f stock_ramdisk/a24_dyg1_ramdisk.img ]; then
+            RD="stock_ramdisk/a24_dyg1_ramdisk.img"
+          fi
+          if [ -n "$RD" ]; then
+            FLAGS="$FLAGS --stock-ramdisk $RD"
+          fi
           set +e
           ./scripts/build-kernel.sh $FLAGS 2>&1 | tee build-trace.log
           RC=${PIPESTATUS[0]}
@@ -137,6 +155,16 @@ jobs:
             echo "::error title=Build failed (rc=$RC)::${MSG}"
             exit "$RC"
           fi
+
+      # A boot image can be built perfectly well and still be worthless: if
+      # its ramdisk is the empty placeholder, the kernel finds no /init, has
+      # no root= on the cmdline, waits ~20 s for a root device and panics with
+      # panic=-1, so the watchdog cuts power. Fail the build instead of
+      # shipping that.
+      - name: Verify the boot images carry a real initramfs
+        if: success()
+        run: |
+          python3 scripts/check_built_boot.py dist/a24_*/boot.img
 
       # The Actions job log is served from blob storage that some networks
       # cannot reach, so on failure the tail of the trace is attached as a
