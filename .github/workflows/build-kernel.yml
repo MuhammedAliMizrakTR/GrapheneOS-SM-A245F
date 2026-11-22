@@ -25,6 +25,11 @@ on:
         required: true
         default: false
         type: boolean
+      stock_boot:
+        description: 'Optional: stock boot.img for the base firmware. Its ramdisk is carried into the kernel image. Without it the image has an empty initramfs and cannot boot.'
+        required: false
+        default: ''
+        type: string
       keep_security:
         description: "Leave the tree's own RKP/KDP/DEFEX/FIVE/PROCA settings alone. Correct for the VH-Devices tree, which ships them enabled."
         required: true
@@ -112,6 +117,9 @@ jobs:
           fi
           if [ "${{ github.event.inputs.keep_security }}" = "true" ]; then
             FLAGS="$FLAGS --keep-security"
+          fi
+          if [ -n "${{ github.event.inputs.stock_boot }}" ]; then
+            FLAGS="$FLAGS --stock-boot ${{ github.event.inputs.stock_boot }}"
           fi
           set +e
           ./scripts/build-kernel.sh $FLAGS 2>&1 | tee build-trace.log

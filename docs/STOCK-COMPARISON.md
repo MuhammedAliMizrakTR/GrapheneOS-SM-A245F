@@ -75,3 +75,71 @@ the evidence:
 
 The stock kernel cannot be wrong in the same way, because it is the thing that
 works. Diffing against it replaces hypothesis with observation.
+
+---
+
+# The ramdisk finding (round 5)
+
+Round 5 changed the picture completely: the tester reports a **25-30 second
+boot followed by a power-off, not a reboot.**
+
+That is the kernel running.
+
+## What the timeline says
+
+| Event | Time |
+|---|---|
+| bootloader decompresses and jumps | 4.14 s |
+| kernel stops printing / system powers off | 25-30 s |
+
+So there are **21-26 seconds of kernel execution** that produced no log
+anywhere. A kernel running that long has a working printk ring buffer; it just
+has no console to drain it to.
+
+## Why it dies, and why `panic=-1` turned the panic into a power-off
+
+`last_kmsg-5.log` shows the ramdisk the bootloader handed over:
+
+```
+boot_linux_fdt:1132: booting linux @ 0x401f0000, ramdisk @ 0x66f00000 (26) dtb @ ...
+```
+
+**26 bytes.** That is our own placeholder gzip — an empty initramfs. The stock
+image carries **39,796,280 bytes** (round 2's log, when an older, larger image
+of ours was flashed).
+
+With an empty initramfs there is no `/init`, and our cmdline has no `root=`:
+
+```
+bootopt=64S3,32N2,64N2 loop.max_part=7 console=tty0 loglevel=7 panic=-1
+```
+
+So the kernel falls out of `prepare_namespace()`, calls
+`mount_block_root()`, waits for a root device that was never named, and prints
+`VFS: Cannot open root device` — to nowhere, because there is no console. Then
+it would normally panic and reboot. `panic=-1` tells it not to. So it hangs
+instead, and the hardware watchdog eventually cuts power.
+
+**A power-off rather than a reboot is the signature of a panic that was told
+not to restart.** The tester's observation and the code agree.
+
+## The fix
+
+`scripts/extract_ramdisk.py` pulls the ramdisk out of the stock `boot.img`
+verbatim, and `build-kernel.sh --stock-boot <file>` places it in ours.
+
+```
+./scripts/build-kernel.sh --variant vanilla --stock-boot /path/to/stock_boot.img
+```
+
+Without a stock image the build still runs, but now says loudly that it is
+packaging an empty initramfs and cannot boot.
+
+## What is needed to try this
+
+The stock `boot.img` for `A245FXXS9DYG1`, which comes from Samsung's AP tar
+for that firmware. Roughly 80 MiB. It is not in this repository and CI cannot
+fetch it — it has to be supplied.
+
+Place it in the repo as `stock/boot.img` (the path is ignored by git) or pass
+it to `--stock-boot` directly.

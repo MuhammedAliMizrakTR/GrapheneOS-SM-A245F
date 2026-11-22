@@ -25,6 +25,7 @@ VARIANT="vanilla"
 HARDENED="0"
 KEEP_SECURITY="0"
 DEBUG_UART="0"
+STOCK_BOOT_IMG=""
 JOBS="$(nproc)"
 
 while [[ $# -gt 0 ]]; do
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
         --harden)     HARDENED="1"; shift ;;
         --keep-security) KEEP_SECURITY="1"; shift ;;
         --debug-uart) DEBUG_UART="1"; shift ;;
+        --stock-boot) STOCK_BOOT_IMG="$2"; shift 2 ;;
         --jobs)     JOBS="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -496,8 +498,32 @@ cat "${DTB_SRC}" > "${BOOTDIR}/dtb"
 MKBOOTIMG="${ROOT}/scripts/third_party/mkbootimg/mkbootimg.py"
 [[ -f "${MKBOOTIMG}" ]] || die "vendored mkbootimg missing at ${MKBOOTIMG}"
 
+# The ramdisk is not optional decoration: it holds /init, which is what
+# mounts the system and starts vendor bring-up. A boot.img built with a
+# placeholder gzip hands the kernel an empty initramfs, and with no root= in
+# the cmdline it then waits ~20 s for a root device that never appears and
+# dies - the 25-30 s boot followed by a power-off the tester reported.
+#
+# Point STOCK_BOOT_IMG at the stock boot.img for this firmware and its
+# ramdisk is carried over verbatim. Without it the build still produces an
+# image, but that image can only ever reach the same dead end, so say so
+# loudly.
 RAMDISK="${BOOTDIR}/ramdisk.gz"
-[[ -f "${RAMDISK}" ]] || { : > "${BOOTDIR}/empty"; gzip -c "${BOOTDIR}/empty" > "${RAMDISK}"; }
+if [[ -n "${STOCK_BOOT_IMG}" ]]; then
+    [[ -f "${STOCK_BOOT_IMG}" ]] || die "STOCK_BOOT_IMG=${STOCK_BOOT_IMG} does not exist"
+    log "using the stock ramdisk from ${STOCK_BOOT_IMG}"
+    python3 "${ROOT}/scripts/extract_ramdisk.py" \
+        "${STOCK_BOOT_IMG}" "${RAMDISK}" || die "could not extract the stock ramdisk"
+    RAMDISK_SIZE="$(stat -c %s "${RAMDISK}")"
+    [[ "${RAMDISK_SIZE}" -gt 1000000 ]] || \
+        die "extracted ramdisk is only ${RAMDISK_SIZE} bytes - that is not a real initramfs"
+else
+    : > "${BOOTDIR}/empty"
+    gzip -c "${BOOTDIR}/empty" > "${RAMDISK}"
+    log "WARNING: no STOCK_BOOT_IMG given - packaging an EMPTY ramdisk."
+    log "WARNING: the kernel will find no /init and no root=, and will die"
+    log "WARNING: after ~20 s waiting for a root device. Set STOCK_BOOT_IMG."
+fi
 
 # Offsets are the published a24 values: base 0x3fff8000, kernel +0x8000,
 # ramdisk +0x26f08000, tags +0x07c88000, dtb +0x01f00000.
